@@ -57,7 +57,7 @@ def lambda_handler(event, context):
     token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
 
     # MUST return as plain string inside JSON
-    return response(200, f"\"bearer {token}\"")
+    return response(200, f'"bearer {token}"')
     
 
 

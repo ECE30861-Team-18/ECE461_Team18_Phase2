@@ -1,5 +1,10 @@
 import json
+import os
+import boto3
 from rds_connection import run_query
+
+s3 = boto3.client("s3")
+S3_BUCKET = os.environ.get("S3_BUCKET")
 
 def lambda_handler(event, context):
     """Delete an artifact by its ID and type from the database."""
@@ -30,6 +35,22 @@ def lambda_handler(event, context):
                 "headers": {"Content-Type": "application/json"},
                 "body": json.dumps({"message": "Artifact not found"})
             }
+
+        # ---------------------------------------------------------
+        # >>> S3 DELETE ADD
+        # Delete all S3 objects under prefix: <artifact_type>/<artifact_id>/
+        # ---------------------------------------------------------
+        prefix = f"{artifact_type}/{artifact_id}/"
+
+        # list all objects
+        listed = s3.list_objects_v2(Bucket=S3_BUCKET, Prefix=prefix)
+
+        if "Contents" in listed:
+            delete_batch = {"Objects": [{"Key": obj["Key"]} for obj in listed["Contents"]]}
+            if delete_batch["Objects"]:
+                s3.delete_objects(Bucket=S3_BUCKET, Delete=delete_batch)
+                print(f"Deleted S3 objects under prefix: {prefix}")
+        # ---------------------------------------------------------
 
         return {
             "statusCode": 200,

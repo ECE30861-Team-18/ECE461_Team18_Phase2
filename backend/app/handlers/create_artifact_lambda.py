@@ -119,7 +119,13 @@ def lambda_handler(event, context):
         # ---------------------------------------------------------
         # >>> METADATA ADD — serialize HuggingFace metadata
         # ---------------------------------------------------------
-        metadata_json = json.dumps(repo_data.__dict__)
+        metadata_dict = repo_data.__dict__.copy()
+        # Convert datetime objects to ISO format strings
+        if metadata_dict.get('created_at'):
+            metadata_dict['created_at'] = metadata_dict['created_at'].isoformat()
+        if metadata_dict.get('updated_at'):
+            metadata_dict['updated_at'] = metadata_dict['updated_at'].isoformat()
+        metadata_json = json.dumps(metadata_dict)
         # ---------------------------------------------------------
 
         # --------------------------

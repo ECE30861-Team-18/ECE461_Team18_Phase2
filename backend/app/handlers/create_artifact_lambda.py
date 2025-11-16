@@ -91,9 +91,9 @@ def lambda_handler(event, context):
         rating = calc.calculate_all_metrics(model_dict, category="MODEL")
         net_score = rating["net_score"]
 
-        # # --------------------------
-        # # 5. Reject if disqualified
-        # # --------------------------
+        # ### --------------------------
+        # ### 5. Reject if disqualified
+        # ### --------------------------
         # if net_score < 0.5:
         #     result = run_query(
         #         """
@@ -116,16 +116,30 @@ def lambda_handler(event, context):
         #         })
         #     }
 
+        # ---------------------------------------------------------
+        # >>> METADATA ADD — serialize HuggingFace metadata
+        # ---------------------------------------------------------
+        metadata_json = json.dumps(repo_data.__dict__)
+        # ---------------------------------------------------------
+
         # --------------------------
         # 6. Insert as upload_pending
         # --------------------------
         result = run_query(
             """
-            INSERT INTO artifacts (type, name, source_url, net_score, ratings, status)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO artifacts (type, name, source_url, net_score, ratings, status, metadata)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING id;
             """,
-            (artifact_type, identifier, url, net_score, json.dumps(rating), "upload_pending"),
+            (
+                artifact_type,
+                identifier,
+                url,
+                net_score,
+                json.dumps(rating),
+                "upload_pending",
+                metadata_json        # <<< METADATA ADD
+            ),
             fetch=True
         )
 

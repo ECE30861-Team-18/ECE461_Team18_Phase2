@@ -5,7 +5,7 @@ import datetime
 
 # Hard-coded for autograder (you will replace with DB lookup later)
 DEFAULT_USERNAME = "ece30861defaultadminuser"
-DEFAULT_PASSWORD = "correcthorsebatterystaple123(!__+@**(A'\"`;DROP TABLE artifacts;"
+DEFAULT_PASSWORD = """correcthorsebatterystaple123(!__+@**(A'"`;DROP TABLE packages;"""
 
 # Load from env variable or fallback
 JWT_SECRET = os.environ.get("JWT_SECRET", "SUPER_SECRET_KEY") 

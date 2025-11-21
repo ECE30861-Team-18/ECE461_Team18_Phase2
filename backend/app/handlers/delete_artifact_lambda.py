@@ -9,6 +9,7 @@ S3_BUCKET = os.environ.get("S3_BUCKET")
 def lambda_handler(event, context):
     """Delete an artifact by its ID and type from the database."""
 
+    token = event["headers"].get("x-authorization")
     print("Incoming event:", json.dumps(event, indent=2))
 
     # --- Extract path parameters from the API Gateway event ---

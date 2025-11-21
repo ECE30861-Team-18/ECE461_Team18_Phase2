@@ -8,6 +8,7 @@ S3_BUCKET = os.environ.get("S3_BUCKET")
 
 def lambda_handler(event, context):
     try:
+        token = event["headers"].get("x-authorization")
         # ---------------------------------------------------------
         # >>> S3 RESET ADD — delete ALL objects in the bucket
         # ---------------------------------------------------------

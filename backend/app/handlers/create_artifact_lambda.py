@@ -19,9 +19,11 @@ sqs_client = boto3.client("sqs")
 # -----------------------------
 def lambda_handler(event, context):
     try:
+        token = event["headers"].get("x-authorization")
         body = json.loads(event.get("body", "{}"))
         url = body.get("url")
         artifact_type = event.get("pathParameters", {}).get("artifact_type")
+        
 
         # --------------------------
         # 2. Validate request

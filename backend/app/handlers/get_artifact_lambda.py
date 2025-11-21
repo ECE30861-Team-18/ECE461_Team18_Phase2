@@ -5,6 +5,7 @@ from rds_connection import run_query
 def lambda_handler(event, context):
     """Retrieve an artifact by its ID and type from the database."""
 
+    token = event["headers"].get("x-authorization")
     print("Incoming event:", json.dumps(event, indent=2))
 
     # --- Extract parameters from URL path ---

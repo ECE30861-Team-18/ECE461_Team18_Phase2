@@ -972,7 +972,7 @@ Resources:
                   required: true
                 - name: X-Authorization
                   in: header
-                  required: true
+                  required: false
               responses:
                 "201":
                   description: Artifact created

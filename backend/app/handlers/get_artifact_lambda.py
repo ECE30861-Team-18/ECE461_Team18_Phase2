@@ -2,6 +2,17 @@ import json
 from rds_connection import run_query
 
 
+def _deserialize_json_fields(record, fields=("metadata", "ratings")):
+    """Convert JSON strings stored in the DB back into Python objects."""
+    for field in fields:
+        raw_value = record.get(field)
+        if isinstance(raw_value, str) and raw_value.strip():
+            try:
+                record[field] = json.loads(raw_value)
+            except json.JSONDecodeError:
+                continue
+
+
 def lambda_handler(event, context):
     """Retrieve an artifact by its ID and type from the database."""
 
@@ -37,6 +48,7 @@ def lambda_handler(event, context):
             }
 
         artifact = results[0]
+        _deserialize_json_fields(artifact)
 
         return {
             "statusCode": 200,

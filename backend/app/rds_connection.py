@@ -51,10 +51,27 @@ def get_connection():
 
 
 def run_query(sql, params=None, fetch=False):
-    """Execute a SQL query safely using a shared connection."""
+    """
+    Execute a SQL query safely using a shared (global) connection.
+    Ensures that aborted transactions are rolled back so the connection
+    does not get stuck for future Lambda invocations.
+    """
     conn = get_connection()
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute(sql, params or [])
-        rows = cur.fetchall() if fetch else None
+
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(sql, params or [])
+
+            if fetch:
+                rows = cur.fetchall()
+            else:
+                rows = None
+
         conn.commit()
         return rows
+
+    except Exception as e:
+        # REQUIRED: Fixes "current transaction is aborted" problem
+        conn.rollback()
+        raise
+

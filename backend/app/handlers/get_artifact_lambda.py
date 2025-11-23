@@ -3,7 +3,7 @@ from rds_connection import run_query
 
 
 def _deserialize_json_fields(record, fields=("metadata", "ratings")):
-    """Convert JSON strings stored in the DB back into Python objects."""
+    """Convert JSON strings stored in the DB back into Python objects. Hopefully this helps."""
     for field in fields:
         raw_value = record.get(field)
         if isinstance(raw_value, str) and raw_value.strip():

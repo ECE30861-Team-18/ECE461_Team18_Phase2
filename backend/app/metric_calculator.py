@@ -7,19 +7,10 @@ import logging
 from metric import Metric
 from submetrics import *
 
-os.makedirs('logs', exist_ok=True)
-LOG_FILE = os.path.join('logs', 'metric_calculator.log')
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-if not any(isinstance(h, logging.FileHandler) and getattr(h, 'baseFilename', None) == os.path.abspath(LOG_FILE) for h in logger.handlers):
-    fh = logging.FileHandler(LOG_FILE, mode='w', encoding='utf-8')
-    fh.setLevel(logging.INFO)
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    fh.setFormatter(formatter)
-    logger.addHandler(fh)
-logger.propagate = False
 
-logger.info("metric_calculator initialized; logging to %s", LOG_FILE)
+logger.info("metric_calculator initialized")
 
 class MetricCalculator:
     """

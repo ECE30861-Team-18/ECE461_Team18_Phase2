@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # ---------- Environment ----------
 S3_BUCKET = os.environ.get("S3_BUCKET")
 SECRET_NAME = os.environ.get("SECRET_NAME", "DB_CREDS")
-QUEUE_URL = os.environ.get("INGEST_QUEUE_URL")  # same name as in Lambda
+QUEUE_URL = os.environ.get("QUEUE_URL")  # same name as in Lambda
 HF_TOKEN = os.environ.get("HF_TOKEN")
 
 if not S3_BUCKET or not SECRET_NAME or not QUEUE_URL:
@@ -38,11 +38,12 @@ def get_db_connection():
     creds = json.loads(secret_response["SecretString"])
 
     conn = psycopg2.connect(
-        host=creds["host"],
-        port=creds["port"],
-        dbname=creds["dbname"],
-        user=creds["username"],
-        password=creds["password"],
+        host=creds["DB_HOST"],
+        port=creds.get("DB_PORT", "5432"),
+        dbname=creds["DB_NAME"],
+        user=creds["DB_USER"],
+        password=creds["DB_PASS"],
+        connect_timeout=5,
     )
     conn.autocommit = True
     return conn

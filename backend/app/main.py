@@ -26,70 +26,16 @@ CLIController = None  # type: ignore
 
 def _validate_log_path_from_env() -> None:
     """
-    If a log file path is provided via environment variables, validate it is
-    writable (create parent directories if possible). Exit with code 1 on error.
-    Recognized env vars: LOG_FILE, LOG_PATH.
+    No-op for AWS Lambda/ECS: file-based logging paths are ignored.
     """
-    # Support multiple common env var names. Treat empty strings as INVALID.
-    file_keys = ['LOG_FILE', 'LOG_PATH', 'LOGFILE', 'LOGFILE_PATH']
-    dir_keys = ['LOG_DIR', 'LOG_DIRECTORY']
-    env_path = None
-    env_dir = None
-
-    # Capture the first explicitly provided file path env var (even if empty)
-    for key in file_keys:
-        if key in os.environ:
-            env_path = os.environ.get(key)
-            break
-
-    # Capture the first explicitly provided directory env var (even if empty)
-    for key in dir_keys:
-        if key in os.environ:
-            env_dir = os.environ.get(key)
-            break
-
-    # If a directory is specified, ensure it exists and is writable (create if possible)
-    if env_dir is not None:
-        try:
-            if not str(env_dir).strip():
-                raise RuntimeError("log directory path is empty")
-            dir_path = Path(env_dir)
-            if not dir_path.exists():
-                raise RuntimeError("log directory does not exist")
-            if not dir_path.is_dir():
-                raise RuntimeError("log directory is not a directory")
-            if not os.access(str(dir_path), os.W_OK):
-                raise RuntimeError("log directory is not writable")
-        except Exception as e:
-            print(f"Error: Invalid log directory in environment: {env_dir} ({e})", file=sys.stderr)
-            sys.exit(1)
-
-    # If a file path is specified, check if the file exists
-    if env_path is not None:
-        try:
-            raw = str(env_path)
-            if not raw.strip():
-                raise RuntimeError("log file path is empty")
-
-            # Expand user and environment variables
-            expanded = os.path.expanduser(os.path.expandvars(raw))
-            path_obj = Path(expanded)
-
-            # Check if the file exists - if not, exit with code 1
-            if not path_obj.exists():
-                raise RuntimeError("log file does not exist")
-
-        except Exception as e:
-            print(f"Error: Invalid log file path in environment: {env_path} ({e})", file=sys.stderr)
-            sys.exit(1)
+    return
 
 
 def _configure_logging_from_env() -> None:
     """
-    Configure the root logger to write to LOG_FILE with verbosity level from LOG_LEVEL.
+    Configure root logger to stdout with verbosity from LOG_LEVEL.
     LOG_LEVEL: 0 -> silent, 1 -> INFO, 2 -> DEBUG. Default is 0 (silent).
     """
-    log_file = os.environ.get('LOG_FILE') or os.environ.get('LOG_PATH') or os.environ.get('LOGFILE')
     # Determine verbosity
     try:
         level_env = int(os.environ.get('LOG_LEVEL', '0'))
@@ -103,22 +49,9 @@ def _configure_logging_from_env() -> None:
     else:
         level = logging.DEBUG
 
-    # Configure logging based on LOG_LEVEL, regardless of log file presence
-    try:
-        if log_file:
-            # Configure with file output
-            logging.basicConfig(level=level, filename=str(log_file), filemode='a',
-                                format='%(asctime)s - %(levelname)s - %(message)s')
-        else:
-            # Configure without file output (console only)
-            logging.basicConfig(level=level, format='%(asctime)s - %(levelname)s - %(message)s')
-        
-        # Also set root logger level explicitly
-        logging.getLogger().setLevel(level)
-    except Exception:
-        # If logging configuration fails, treat as fatal
-        print(f"Error: could not configure logging to file: {log_file}", file=sys.stderr)
-        sys.exit(1)
+    # Configure logging to stdout only
+    logging.basicConfig(level=level, format='%(asctime)s - %(levelname)s - %(message)s')
+    logging.getLogger().setLevel(level)
     # Emit a minimal confirmation message at the configured verbosity so
     # downstream checks can verify that logging is active at this level.
     try:

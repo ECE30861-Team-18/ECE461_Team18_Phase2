@@ -18,27 +18,9 @@ except Exception:
     pass
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-try:
-    os.makedirs('logs', exist_ok=True)
-    LOG_FILE = os.path.join('logs', 'submetrics.log')
-    if not any(isinstance(h, logging.FileHandler) and getattr(h, 'baseFilename', None) == os.path.abspath(LOG_FILE) for h in logger.handlers):
-        fh = logging.FileHandler(LOG_FILE, mode='w', encoding='utf-8')
-        fh.setLevel(logging.INFO)
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-        fh.setFormatter(formatter)
-        logger.addHandler(fh)
-except Exception:
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    sh = logging.StreamHandler()
-    sh.setLevel(logging.INFO)
-    sh.setFormatter(formatter)
-    if not any(isinstance(h, logging.StreamHandler) for h in logger.handlers):
-        logger.addHandler(sh)
-finally:
-    logger.propagate = False
+logger.setLevel(logging.INFO)
 
-logger.info("submetrics initialized; logging to %s", LOG_FILE)
+logger.info("submetrics initialized")
 
 # Read Gen AI Studio API key safely (may be missing). Do not raise on missing key.
 GEN_AI_STUDIO_API_KEY = os.environ.get('GEN_AI_STUDIO_API_KEY')

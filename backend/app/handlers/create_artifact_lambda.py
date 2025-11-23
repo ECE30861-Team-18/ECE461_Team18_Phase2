@@ -1,8 +1,6 @@
 import json
 import os
 import boto3
-import psycopg2
-from urllib.parse import urlparse
 
 from auth import require_auth
 from metric_calculator import MetricCalculator
@@ -10,56 +8,22 @@ from url_handler import URLHandler
 from url_category import URLCategory
 from url_data import URLData
 from data_retrieval import DataRetriever
+from rds_connection import run_query
+
 
 S3_BUCKET = os.environ.get("S3_BUCKET")
-SECRET_NAME = os.environ.get("SECRET_NAME", "DB_CREDS")
-
-secrets_client = boto3.client("secretsmanager")
 sqs_client = boto3.client("sqs")
-
-
-# -----------------------------
-# DB Connection Helper
-# -----------------------------
-def get_db_connection():
-    secret_response = secrets_client.get_secret_value(SecretId=SECRET_NAME)
-    creds = json.loads(secret_response["SecretString"])
-
-    return psycopg2.connect(
-        host=creds["host"],
-        port=creds["port"],
-        dbname=creds["dbname"],
-        user=creds["username"],
-        password=creds["password"],
-    )
-
-
-# -----------------------------
-# Helper: Extract HF Identifier
-# -----------------------------
-def parse_huggingface_identifier(url: str):
-    parsed = urlparse(url)
-    parts = [p for p in parsed.path.split("/") if p]
-    if len(parts) >= 2:
-        return f"{parts[0]}/{parts[1]}"   # e.g. "google-bert/bert-base-uncased"
-    return None
-
 
 # -----------------------------
 # Lambda Handler
 # -----------------------------
 def lambda_handler(event, context):
-    # --------------------------
-    # 1. Authentication
-    # --------------------------
-    # valid, error = require_auth(event)
-    # if not valid:
-    #     return error   # already structured 403   ########### THIS WILL BE REPLACE WITH DB INTEGRATION FOR TOKEN
-
     try:
+        token = event["headers"].get("x-authorization")
         body = json.loads(event.get("body", "{}"))
         url = body.get("url")
         artifact_type = event.get("pathParameters", {}).get("artifact_type")
+        
 
         # --------------------------
         # 2. Validate request
@@ -70,33 +34,32 @@ def lambda_handler(event, context):
                 "body": json.dumps({"error": "Missing URL or artifact_type"})
             }
 
-        identifier = parse_huggingface_identifier(url)
-        if not identifier:
+        # Use URLHandler to extract identifier
+        url_handler_temp = URLHandler()
+        parsed_data = url_handler_temp.handle_url(url)
+        identifier = parsed_data.unique_identifier
+        
+        if not identifier or parsed_data.category != URLCategory.HUGGINGFACE:
             return {
                 "statusCode": 400,
                 "body": json.dumps({"error": "Invalid Hugging Face URL"})
             }
 
         # --------------------------
-        # 3. Duplicate check
+        # 3. Duplicate check (using source_url)
         # --------------------------
-        conn = get_db_connection()
-        cur = conn.cursor()
-
-        cur.execute(
-            "SELECT id FROM artifacts WHERE url = %s AND type = %s;",
-            (url, artifact_type)
+        check_result = run_query(
+            "SELECT id FROM artifacts WHERE source_url = %s AND type = %s;",
+            (url, artifact_type),
+            fetch=True
         )
-        row = cur.fetchone()
 
-        if row:
-            cur.close()
-            conn.close()
+        if check_result:
             return {
                 "statusCode": 409,
                 "body": json.dumps({
                     "error": "Artifact already exists",
-                    "id": row[0]
+                    "id": check_result[0]['id']
                 })
             }
 
@@ -110,7 +73,14 @@ def lambda_handler(event, context):
         )
         calc = MetricCalculator()
 
-        model_obj = URLData(url=url, category=URLCategory.HUGGINGFACE, is_valid=True)
+        # Let URLHandler build a proper URLData instance
+        model_obj: URLData = url_handler.handle_url(url)
+
+        if not model_obj.is_valid or model_obj.category != URLCategory.HUGGINGFACE:
+            return {
+                "statusCode": 400,
+                "body": json.dumps({"error": "URL is not a valid Hugging Face URL"})
+            }
 
         # get metadata from HF repo (README, config, tags, etc)
         repo_data = data_retriever.retrieve_data(model_obj)
@@ -123,50 +93,65 @@ def lambda_handler(event, context):
         rating = calc.calculate_all_metrics(model_dict, category="MODEL")
         net_score = rating["net_score"]
 
-        # --------------------------
-        # 5. Reject if disqualified
-        # --------------------------
-        if net_score < 0.5:
-            # insert into DB as disqualified (spec requires this)
-            cur.execute(
-                """
-                INSERT INTO artifacts (type, url, name, net_score, ratings, status)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                RETURNING id;
-                """,
-                (artifact_type, url, identifier, net_score, json.dumps(rating), "disqualified")
-            )
-            artifact_id = cur.fetchone()[0]
-            conn.commit()
+        # ### --------------------------
+        # ### 5. Reject if disqualified
+        # ### --------------------------
+        # if net_score < 0.5:
+        #     result = run_query(
+        #         """
+        #         INSERT INTO artifacts (type, name, source_url, net_score, ratings, status)
+        #         VALUES (%s, %s, %s, %s, %s, %s)
+        #         RETURNING id;
+        #         """,
+        #         (artifact_type, identifier, url, net_score, json.dumps(rating), "disqualified"),
+        #         fetch=True
+        #     )
 
-            cur.close()
-            conn.close()
+        #     artifact_id = result[0]['id']
 
-            return {
-                "statusCode": 424,  # FAILED_DEPENDENCY
-                "body": json.dumps({
-                    "error": "Artifact disqualified by rating",
-                    "net_score": net_score,
-                    "id": artifact_id
-                })
-            }
+        #     return {
+        #         "statusCode": 424,  # FAILED_DEPENDENCY
+        #         "body": json.dumps({
+        #             "error": "Artifact disqualified by rating",
+        #             "net_score": net_score,
+        #             "id": artifact_id
+        #         })
+        #     }
+
+        # ---------------------------------------------------------
+        # >>> METADATA ADD — serialize HuggingFace metadata
+        # ---------------------------------------------------------
+        metadata_dict = repo_data.__dict__.copy()
+        # Convert datetime objects to ISO format strings
+        if metadata_dict.get('created_at'):
+            metadata_dict['created_at'] = metadata_dict['created_at'].isoformat()
+        if metadata_dict.get('updated_at'):
+            metadata_dict['updated_at'] = metadata_dict['updated_at'].isoformat()
+        metadata_json = json.dumps(metadata_dict)
+        # ---------------------------------------------------------
 
         # --------------------------
         # 6. Insert as upload_pending
         # --------------------------
-        cur.execute(
+        result = run_query(
             """
-            INSERT INTO artifacts (type, url, name, net_score, ratings, status)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO artifacts (type, name, source_url, net_score, ratings, status, metadata)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING id;
             """,
-            (artifact_type, url, identifier, net_score, json.dumps(rating), "upload_pending")
+            (
+                artifact_type,
+                identifier,
+                url,
+                net_score,
+                json.dumps(rating),
+                "upload_pending",
+                metadata_json        # <<< METADATA ADD
+            ),
+            fetch=True
         )
 
-        artifact_id = cur.fetchone()[0]
-        conn.commit()
-        cur.close()
-        conn.close()
+        artifact_id = result[0]['id']
 
         # --------------------------
         # 7. Send SQS message to ECS ingest worker

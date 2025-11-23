@@ -14,7 +14,13 @@ cur.execute("""
 CREATE TABLE IF NOT EXISTS artifacts (
     id SERIAL PRIMARY KEY,
     type TEXT NOT NULL,
-    url TEXT NOT NULL,
+    name TEXT,
+    source_url TEXT NOT NULL,
+    download_url TEXT,
+    net_score FLOAT,
+    ratings JSONB,
+    status TEXT DEFAULT 'upload_pending',
+    metadata JSONB,
     created_at TIMESTAMP DEFAULT NOW()
 );
 """)

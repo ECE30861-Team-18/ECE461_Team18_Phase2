@@ -5,13 +5,14 @@ from rds_connection import run_query
 def lambda_handler(event, context):
     """Return a list of all artifacts stored in the database."""
 
+    token = event["headers"].get("x-authorization")
     print("Incoming event:", json.dumps(event, indent=2))
 
     try:
         # --- Optional: in the future you can parse filters from the event["body"] or query params ---
         # For now, just fetch everything
         sql = """
-        SELECT id, type, url, created_at
+        SELECT id, type, name, source_url, download_url, net_score, ratings, status, metadata, created_at
         FROM artifacts
         ORDER BY created_at DESC;
         """

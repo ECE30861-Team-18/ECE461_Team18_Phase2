@@ -5,6 +5,7 @@ from rds_connection import run_query
 def lambda_handler(event, context):
     """Retrieve an artifact by its ID and type from the database."""
 
+    token = event["headers"].get("x-authorization")
     print("Incoming event:", json.dumps(event, indent=2))
 
     # --- Extract parameters from URL path ---
@@ -22,7 +23,7 @@ def lambda_handler(event, context):
     # --- Fetch from database ---
     try:
         sql = """
-        SELECT id, type, url, created_at
+        SELECT id, type, name, source_url, download_url, net_score, ratings, status, metadata, created_at
         FROM artifacts
         WHERE id = %s AND type = %s;
         """

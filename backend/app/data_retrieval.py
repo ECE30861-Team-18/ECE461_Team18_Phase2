@@ -12,20 +12,10 @@ import logging
 from url_data import URLData, RepositoryData
 from url_category import URLCategory
 
-LOG_DIR = '/tmp/logs'
-os.makedirs(LOG_DIR, exist_ok=True)
-LOG_FILE = os.path.join(LOG_DIR, 'data_retrieval.log')
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-if not any(isinstance(h, logging.FileHandler) and getattr(h, 'baseFilename', None) == os.path.abspath(LOG_FILE) for h in logger.handlers):
-    fh = logging.FileHandler(LOG_FILE, mode='w', encoding='utf-8')
-    fh.setLevel(logging.DEBUG)
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    fh.setFormatter(formatter)
-    logger.addHandler(fh)
-logger.propagate = False
+logger.setLevel(logging.INFO)
 
-logger.info("data_retrieval initialized; logging to %s", LOG_FILE)
+logger.info("data_retrieval initialized")
 
 
 class GitHubAPIClient:

@@ -29,29 +29,8 @@ except Exception:
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-try:
-    os.makedirs('logs', exist_ok=True)
-    LOG_FILE = os.path.join('logs', 'cli_controller.log')
-    # Ensure each module writes to its own file and doesn't propagate to root handlers
-    if not any(isinstance(h, logging.FileHandler) and getattr(h, 'baseFilename', None) == os.path.abspath(LOG_FILE) for h in logger.handlers):
-        fh = logging.FileHandler(LOG_FILE, mode='w', encoding='utf-8')
-        fh.setLevel(logging.INFO)
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-        fh.setFormatter(formatter)
-        logger.addHandler(fh)
-except Exception:
-    # If file logging is not possible (e.g., invalid path or permissions), fall back to stderr
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    sh = logging.StreamHandler()
-    sh.setLevel(logging.INFO)
-    sh.setFormatter(formatter)
-    # Avoid duplicate stream handlers
-    if not any(isinstance(h, logging.StreamHandler) for h in logger.handlers):
-        logger.addHandler(sh)
-finally:
-    logger.propagate = False
 
-logger.info("cli_controller initialized; logging to %s", LOG_FILE)
+logger.info("cli_controller initialized")
 
 HF_TOKEN = os.environ.get('HF_TOKEN')
 GITHUB_TOKEN = os.environ.get('GITHUB_TOKEN')

@@ -16,6 +16,7 @@ def lambda_handler(event, context):
     token = event["headers"].get("x-authorization")
     print("Incoming event:", json.dumps(event, indent=2))
 
+    # --- Extract parameters ---
     path_params = event.get("pathParameters") or {}
     artifact_type = path_params.get("artifact_type")
     artifact_id = path_params.get("id")
@@ -45,24 +46,23 @@ def lambda_handler(event, context):
         artifact = results[0]
         _deserialize_json_fields(artifact)
 
-        # ⭐ REQUIRED AUTOGRADER FORMAT ⭐
+        # ⭐⭐⭐ SPEC-CORRECT AUTOGRADER-FRIENDLY RESPONSE ⭐⭐⭐
+        response_body = {
+            "metadata": {
+                "name": artifact["name"],
+                "id": artifact["id"],
+                "type": artifact["type"]
+            },
+            "data": {
+                "url": artifact["source_url"],
+                "download_url": artifact["download_url"]
+            }
+        }
+
         return {
             "statusCode": 200,
             "headers": {"Content-Type": "application/json"},
-            "body": json.dumps({
-                "metadata": {
-                    "id": artifact["id"],
-                    "type": artifact["type"],
-                    "name": artifact["name"],
-                    "source_url": artifact["source_url"],
-                    "download_url": artifact["download_url"],
-                    "net_score": artifact["net_score"],
-                    "status": artifact["status"],
-                    "ratings": artifact["ratings"],
-                    "metadata": artifact["metadata"],
-                    "created_at": artifact["created_at"]
-                }
-            }, default=str)
+            "body": json.dumps(response_body, default=str)
         }
 
     except Exception as e:

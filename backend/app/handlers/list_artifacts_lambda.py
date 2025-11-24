@@ -24,13 +24,21 @@ def lambda_handler(event, context):
         """
         artifacts = run_query(sql, fetch=True)
 
-        # ⭐ Enforce empty list on no data ⭐
         if not artifacts:
             artifacts = []
 
-        # Deserialize JSON fields
         for artifact in artifacts:
             _deserialize_json_fields(artifact)
+
+        # ⭐ Convert DB rows → SPEC-CORRECT ArtifactMetadata ⭐
+        metadata_list = [
+            {
+                "name": artifact["name"],
+                "id": artifact["id"],
+                "type": artifact["type"]
+            }
+            for artifact in artifacts
+        ]
 
         return {
             "statusCode": 200,
@@ -39,10 +47,7 @@ def lambda_handler(event, context):
                 "Access-Control-Allow-Methods": "OPTIONS,POST,GET",
                 "Access-Control-Allow-Headers": "Content-Type"
             },
-            "body": json.dumps({
-                "count": len(artifacts),
-                "artifacts": artifacts
-            }, default=str)
+            "body": json.dumps(metadata_list, default=str)
         }
 
     except Exception as e:

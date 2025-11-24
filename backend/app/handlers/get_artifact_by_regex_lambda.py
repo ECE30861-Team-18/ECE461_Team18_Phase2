@@ -119,7 +119,7 @@ def lambda_handler(event, context):
             "body": json.dumps({"error": "Invalid JSON in request body"})
         }
     except Exception as e:
-        print(f"❌ Error in get_artifact_by_regex_lambda: {e}")
+        print(f"Error in get_artifact_by_regex_lambda: {e}")
         return {
             "statusCode": 500,
             "headers": {"Content-Type": "application/json"},

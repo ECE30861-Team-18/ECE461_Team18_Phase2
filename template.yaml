@@ -986,6 +986,14 @@ Resources:
             get:
               parameters:
                 - examples:
+                    ExampleName:
+                      value: audience-classifier
+                  name: name
+                  schema:
+                    $ref: "#/components/schemas/ArtifactName"
+                  in: path
+                  required: true
+                - examples:
                     ExampleToken:
                       value: bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c
                   name: X-Authorization
@@ -993,7 +1001,7 @@ Resources:
                   schema:
                     $ref: "#/components/schemas/AuthenticationToken"
                   in: header
-                  required: true
+                  required: false
               responses:
                 "200":
                   content:
@@ -1024,25 +1032,6 @@ Resources:
               operationId: ArtifactByNameGet
               summary: List artifact metadata for this name. (NON-BASELINE)
               description: Return metadata for each artifact matching this name.
-              parameters:
-                - examples:
-                    ExampleName:
-                      value: audience-classifier
-                  name: name
-                  schema:
-                    $ref: "#/components/schemas/ArtifactName"
-                  in: path
-                  required: true
-                - examples:
-                    ExampleToken:
-                      value: bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c
-                  name: X-Authorization
-                  description: ""
-                  schema:
-                    $ref: "#/components/schemas/AuthenticationToken"
-                  in: header
-                  required: true
-                  
               x-amazon-apigateway-integration:
                 uri:
                   Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetArtifactByNameLambda.Arn}/invocations
@@ -1060,7 +1049,7 @@ Resources:
                   schema:
                     $ref: "#/components/schemas/AuthenticationToken"
                   in: header
-                  required: true
+                  required: false
               requestBody:
                 content:
                   application/json:

@@ -56,8 +56,23 @@ def lambda_handler(event, context):
 
     token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
 
+    resp = response(200, f'bearer {token}')
     # MUST return as plain string inside JSON (no extra embedded quotes)
-    return response(200, f'bearer {token}')
+    log_entry = {
+    "timestamp": str(datetime.datetime.utcnow()),
+    "requestId": context.aws_request_id,
+    "ip": event.get("requestContext", {}).get("identity", {}).get("sourceIp"),
+    "httpMethod": event.get("httpMethod"),
+    "resourcePath": event.get("resource"),
+    "requestBody": event.get("body"),
+    "responseBody": resp["body"],
+    "status": resp["statusCode"]
+}
+
+    print(json.dumps(log_entry))
+
+
+    return resp
     
 
 

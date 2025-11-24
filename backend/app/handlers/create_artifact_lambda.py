@@ -39,10 +39,35 @@ def lambda_handler(event, context):
         parsed_data = url_handler_temp.handle_url(url)
         identifier = parsed_data.unique_identifier
         
-        if not identifier or parsed_data.category != URLCategory.HUGGINGFACE:
+        # >>> MINIMAL CHANGE: type-aware URL validation <<<
+        if not identifier:
             return {
                 "statusCode": 400,
-                "body": json.dumps({"error": "Invalid Hugging Face URL"})
+                "body": json.dumps({"error": "Invalid URL"})
+            }
+
+        if artifact_type == "model":
+            if parsed_data.category != URLCategory.HUGGINGFACE:
+                return {
+                    "statusCode": 400,
+                    "body": json.dumps({"error": "Model must use a Hugging Face URL"})
+                }
+        elif artifact_type == "dataset":
+            if parsed_data.category != URLCategory.HUGGINGFACE:
+                return {
+                    "statusCode": 400,
+                    "body": json.dumps({"error": "Dataset must use a Hugging Face URL"})
+                }
+        elif artifact_type == "code":
+            if parsed_data.category != URLCategory.GITHUB:
+                return {
+                    "statusCode": 400,
+                    "body": json.dumps({"error": "Code artifacts must use a GitHub URL"})
+                }
+        else:
+            return {
+                "statusCode": 400,
+                "body": json.dumps({"error": "Invalid artifact_type"})
             }
 
         # --------------------------
@@ -76,11 +101,25 @@ def lambda_handler(event, context):
         # Let URLHandler build a proper URLData instance
         model_obj: URLData = url_handler.handle_url(url)
 
-        if not model_obj.is_valid or model_obj.category != URLCategory.HUGGINGFACE:
+        # >>> MINIMAL CHANGE: type-aware validity check, keep ratings as-is <<<
+        if not model_obj.is_valid:
             return {
                 "statusCode": 400,
-                "body": json.dumps({"error": "URL is not a valid Hugging Face URL"})
+                "body": json.dumps({"error": "URL is not valid"})
             }
+
+        if artifact_type in ("model", "dataset"):
+            if model_obj.category != URLCategory.HUGGINGFACE:
+                return {
+                    "statusCode": 400,
+                    "body": json.dumps({"error": "URL is not a valid Hugging Face URL"})
+                }
+        elif artifact_type == "code":
+            if model_obj.category != URLCategory.GITHUB:
+                return {
+                    "statusCode": 400,
+                    "body": json.dumps({"error": "URL is not a valid GitHub URL"})
+                }
 
         # get metadata from HF repo (README, config, tags, etc)
         repo_data = data_retriever.retrieve_data(model_obj)
@@ -153,6 +192,9 @@ def lambda_handler(event, context):
 
         artifact_id = result[0]['id']
 
+        # ⭐ SPEC: construct download_url for ArtifactData ⭐
+        download_url = f"s3://{S3_BUCKET}/{artifact_type}/{artifact_id}/"
+
         # --------------------------
         # 7. Send SQS message to ECS ingest worker
         # --------------------------
@@ -178,7 +220,8 @@ def lambda_handler(event, context):
                     "type": artifact_type
                 },
                 "data": {
-                    "url": url
+                    "url": url,
+                    "download_url": download_url   # ⭐ SPEC: include download_url in ArtifactData
                 }
             })
         }

@@ -90,5 +90,5 @@ def response(code, body_obj):
     return {
         "statusCode": code,
         "headers": {"Content-Type": "application/json"},
-        "body": json.dumps(body_obj)
+        "body": json.dumps(body_obj) 
     }

@@ -78,17 +78,7 @@ def lambda_handler(event, context):
 
 # Helper to build API Gateway compatible response
 def response(code, body_obj):
-    # If returning the token string, do NOT wrap in JSON
-    if isinstance(body_obj, str):
-        return {
-            "statusCode": code,
-            "headers": {"Content-Type": "application/json"},
-            "body": body_obj   # ← RAW STRING
-        }
-
-    # Otherwise use normal JSON encoding
     return {
         "statusCode": code,
-        "headers": {"Content-Type": "application/json"},
-        "body": json.dumps(body_obj) 
+        "body": json.dumps(body_obj)
     }

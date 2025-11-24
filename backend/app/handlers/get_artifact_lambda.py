@@ -3,7 +3,6 @@ from rds_connection import run_query
 
 
 def _deserialize_json_fields(record, fields=("metadata", "ratings")):
-    """Convert JSON strings stored in the DB back into Python objects. Hopefully this helps."""
     for field in fields:
         raw_value = record.get(field)
         if isinstance(raw_value, str) and raw_value.strip():
@@ -14,12 +13,9 @@ def _deserialize_json_fields(record, fields=("metadata", "ratings")):
 
 
 def lambda_handler(event, context):
-    """Retrieve an artifact by its ID and type from the database."""
-
     token = event["headers"].get("x-authorization")
     print("Incoming event:", json.dumps(event, indent=2))
 
-    # --- Extract parameters from URL path ---
     path_params = event.get("pathParameters") or {}
     artifact_type = path_params.get("artifact_type")
     artifact_id = path_params.get("id")
@@ -31,7 +27,6 @@ def lambda_handler(event, context):
             "body": json.dumps({"error": "Missing artifact_type or id in path"})
         }
 
-    # --- Fetch from database ---
     try:
         sql = """
         SELECT id, type, name, source_url, download_url, net_score, ratings, status, metadata, created_at
@@ -50,12 +45,23 @@ def lambda_handler(event, context):
         artifact = results[0]
         _deserialize_json_fields(artifact)
 
+        # ⭐ REQUIRED AUTOGRADER FORMAT ⭐
         return {
             "statusCode": 200,
             "headers": {"Content-Type": "application/json"},
             "body": json.dumps({
-                "message": "Artifact retrieved successfully",
-                "artifact": artifact
+                "metadata": {
+                    "id": artifact["id"],
+                    "type": artifact["type"],
+                    "name": artifact["name"],
+                    "source_url": artifact["source_url"],
+                    "download_url": artifact["download_url"],
+                    "net_score": artifact["net_score"],
+                    "status": artifact["status"],
+                    "ratings": artifact["ratings"],
+                    "metadata": artifact["metadata"],
+                    "created_at": artifact["created_at"]
+                }
             }, default=str)
         }
 

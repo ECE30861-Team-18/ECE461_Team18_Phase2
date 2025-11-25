@@ -9,8 +9,9 @@ from rds_connection import run_query
 
 
 def round_to_half(value):
-    """Round a value to the nearest 0.5"""
-    return round(value * 2) / 2
+    """Round a value to the nearest 0.5, return int if whole number"""
+    rounded = round(value * 2) / 2
+    return int(rounded) if rounded == int(rounded) else rounded
 
 
 def lambda_handler(event, context):

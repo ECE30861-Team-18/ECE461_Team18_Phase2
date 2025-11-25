@@ -29,7 +29,7 @@ def lambda_handler(event, context):
         # Parse request body
         body = json.loads(event.get("body", "{}"))
         regex_pattern = body.get("regex")
-        print(f"[AUTOGRADER DEBUG] Parsed regex pattern: '{regex_pattern}'"
+        print(f"[AUTOGRADER DEBUG] Parsed regex pattern: '{regex_pattern}'")
         
         # Validate regex parameter
         if not regex_pattern:

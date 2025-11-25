@@ -50,6 +50,16 @@ def lambda_handler(event, context):
                 'body': json.dumps({'error': 'Missing artifact_type or id'})
             }
         
+        # Convert artifact_id to integer
+        try:
+            artifact_id = int(artifact_id)
+        except ValueError:
+            return {
+                'statusCode': 400,
+                'headers': {'Content-Type': 'application/json'},
+                'body': json.dumps({'error': 'Invalid artifact_id. Must be an integer'})
+            }
+        
         # Validate artifact_type
         valid_types = ['model', 'dataset', 'code']
         if artifact_type not in valid_types:

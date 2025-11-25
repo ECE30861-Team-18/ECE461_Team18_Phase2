@@ -8,6 +8,11 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rds_connection import run_query
 
 
+def round_to_half(value):
+    """Round a value to the nearest 0.5"""
+    return round(value * 2) / 2
+
+
 def lambda_handler(event, context):
     """
     Handler for GET /artifact/{artifact_type}/{id}/cost
@@ -89,8 +94,8 @@ def lambda_handler(event, context):
             
             cost_response = {
                 str(artifact_id): {
-                    "standalone_cost": round(storage_mb, 2),
-                    "total_cost": round(storage_mb, 2)
+                    "standalone_cost": round_to_half(storage_mb),
+                    "total_cost": round_to_half(storage_mb)
                 }
             }
             
@@ -125,18 +130,18 @@ def lambda_handler(event, context):
                         total_cost += dep_storage_mb
                         
                         cost_response[str(dep['id'])] = {
-                            "standalone_cost": round(dep_storage_mb, 2),
-                            "total_cost": round(dep_storage_mb, 2)
+                            "standalone_cost": round_to_half(dep_storage_mb),
+                            "total_cost": round_to_half(dep_storage_mb)
                         }
             
             # Update main artifact's total cost
-            cost_response[str(artifact_id)]["total_cost"] = round(total_cost, 2)
+            cost_response[str(artifact_id)]["total_cost"] = round_to_half(total_cost)
         else:
             # When dependency=false, return both standalone_cost and total_cost (they're equal)
             cost_response = {
                 str(artifact_id): {
-                    "standalone_cost": round(storage_mb, 2),
-                    "total_cost": round(storage_mb, 2)
+                    "standalone_cost": round_to_half(storage_mb),
+                    "total_cost": round_to_half(storage_mb)
                 }
             }
         

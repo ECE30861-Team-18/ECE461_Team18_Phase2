@@ -18,7 +18,7 @@ def lambda_handler(event, context):
     artifact_id = path_params.get("id")
 
     # --- Validate input ---
-    if not artifact_type or not artifact_id:
+    if not artifact_type or not artifact_id: 
         return {
             "statusCode": 400,
             "headers": {"Content-Type": "application/json"},

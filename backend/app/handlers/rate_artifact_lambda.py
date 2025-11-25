@@ -21,6 +21,16 @@ def lambda_handler(event, context):
                 "body": json.dumps({"error": "Missing artifact ID"})
             }
         
+        # Convert to integer for database query
+        try:
+            artifact_id = int(artifact_id)
+        except (ValueError, TypeError):
+            return {
+                "statusCode": 400,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({"error": "Invalid artifact ID format"})
+            }
+        
         print(f"[RATE] Fetching ratings for artifact ID: {artifact_id}")
         
         # Query artifact with ratings

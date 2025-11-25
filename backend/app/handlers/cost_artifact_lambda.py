@@ -37,13 +37,30 @@ def lambda_handler(event, context):
         artifact_type = path_params.get('artifact_type')
         artifact_id = path_params.get('id')
         
+        # Convert artifact_id to integer
+        if not artifact_id:
+            return {
+                'statusCode': 400,
+                'headers': {'Content-Type': 'application/json'},
+                'body': json.dumps({'error': 'Missing artifact_type or id'})
+            }
+        
+        try:
+            artifact_id = int(artifact_id)
+        except (ValueError, TypeError):
+            return {
+                'statusCode': 400,
+                'headers': {'Content-Type': 'application/json'},
+                'body': json.dumps({'error': 'Invalid artifact ID format'})
+            }
+        
         # Extract query parameters
         query_params = event.get('queryStringParameters') or {}
         dependency = query_params.get('dependency', 'false').lower() == 'true'
         
         logger.info(f"[COST DEBUG] artifact_type={artifact_type}, id={artifact_id}, dependency={dependency}")
         
-        if not artifact_id or not artifact_type:
+        if not artifact_type:
             return {
                 'statusCode': 400,
                 'headers': {'Content-Type': 'application/json'},

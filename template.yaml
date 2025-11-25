@@ -1152,54 +1152,6 @@ Resources:
                 httpMethod: POST
                 type: aws_proxy
 
-          /artifact/{artifact_type}/{id}/cost:
-            get:
-              parameters:
-                - name: artifact_type
-                  in: path
-                  required: true
-                  schema:
-                    type: string
-                    enum: [model, dataset, code]
-                - name: id
-                  in: path
-                  required: true
-                  schema:
-                    type: string
-                - name: dependency
-                  in: query
-                  required: false
-                  schema:
-                    type: boolean
-                    default: false
-                - name: X-Authorization
-                  in: header
-                  required: false
-                  schema:
-                    type: string
-              responses:
-                "200":
-                  description: Return the total cost of the artifact, and its dependencies
-                  content:
-                    application/json:
-                      schema:
-                        type: object
-                "400":
-                  description: Missing or invalid fields
-                "403":
-                  description: Authentication failed
-                "404":
-                  description: Artifact does not exist
-                "500":
-                  description: Cost calculator error
-              operationId: ArtifactCost
-              summary: Get the cost of an artifact
-              x-amazon-apigateway-integration:
-                uri:
-                  Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${CostArtifactLambda.Arn}/invocations
-                httpMethod: POST
-                type: aws_proxy
-
       Cors:
         AllowMethods: "'OPTIONS,GET,POST,PUT,DELETE'"
         AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
@@ -1465,27 +1417,6 @@ Resources:
           Type: Api
           Properties:
             Path: /artifact/model/{id}/rate
-            Method: get
-            RestApiId: !Ref ece461Ph2Api
-      Policies:
-        - AWSLambdaBasicExecutionRole
-        - Statement:
-            - Effect: Allow
-              Action: secretsmanager:GetSecretValue
-              Resource: !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:DB_CREDS-*
-  
-  CostArtifactLambda:
-    Type: AWS::Serverless::Function
-    Properties:
-      FunctionName: cost_artifact_lambda
-      Handler: handlers/cost_artifact_lambda.lambda_handler
-      CodeUri: ./backend/app
-      Description: Lambda for getting artifact cost
-      Events:
-        ApiEvent:
-          Type: Api
-          Properties:
-            Path: /artifact/{artifact_type}/{id}/cost
             Method: get
             RestApiId: !Ref ece461Ph2Api
       Policies:

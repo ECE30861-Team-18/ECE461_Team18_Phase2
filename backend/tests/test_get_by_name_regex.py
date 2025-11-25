@@ -72,7 +72,7 @@ class TestGetArtifactByName:
         assert len(body) == 2
         assert body[0]['name'] == 'test-model'
         assert body[0]['type'] == 'model'
-        assert body[1]['id'] == '2'
+        assert body[1]['id'] == 2
     
     @patch('rds_connection.run_query')
     def test_get_by_name_not_found(self, mock_run_query):

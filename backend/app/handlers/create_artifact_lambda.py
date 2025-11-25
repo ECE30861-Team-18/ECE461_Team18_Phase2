@@ -22,6 +22,7 @@ def lambda_handler(event, context):
         token = event["headers"].get("x-authorization")
         body = json.loads(event.get("body", "{}"))
         url = body.get("url")
+        provided_name = body.get("name")
         artifact_type = event.get("pathParameters", {}).get("artifact_type")
         
 
@@ -45,6 +46,17 @@ def lambda_handler(event, context):
                 "statusCode": 400,
                 "body": json.dumps({"error": "Invalid URL"})
             }
+
+        # Allow clients to override the derived identifier with a friendly name
+        if provided_name is not None:
+            if not isinstance(provided_name, str) or not provided_name.strip():
+                return {
+                    "statusCode": 400,
+                    "body": json.dumps({"error": "Invalid name"})
+                }
+            artifact_name = provided_name.strip()
+        else:
+            artifact_name = identifier
 
         if artifact_type == "model":
             if parsed_data.category != URLCategory.HUGGINGFACE:
@@ -126,7 +138,7 @@ def lambda_handler(event, context):
 
         model_dict = {
             **repo_data.__dict__,
-            "name": identifier
+            "name": artifact_name
         }
 
         rating = calc.calculate_all_metrics(model_dict, category="MODEL")
@@ -161,6 +173,7 @@ def lambda_handler(event, context):
         # >>> METADATA ADD — serialize HuggingFace metadata
         # ---------------------------------------------------------
         metadata_dict = repo_data.__dict__.copy()
+        metadata_dict["requested_name"] = artifact_name
         # Convert datetime objects to ISO format strings
         if metadata_dict.get('created_at'):
             metadata_dict['created_at'] = metadata_dict['created_at'].isoformat()
@@ -180,7 +193,7 @@ def lambda_handler(event, context):
             """,
             (
                 artifact_type,
-                identifier,
+                artifact_name,
                 url,
                 net_score,
                 json.dumps(rating),
@@ -215,7 +228,7 @@ def lambda_handler(event, context):
             "statusCode": 201,
             "body": json.dumps({
                 "metadata": {
-                    "name": identifier,
+                    "name": artifact_name,
                     "id": artifact_id,
                     "type": artifact_type
                 },

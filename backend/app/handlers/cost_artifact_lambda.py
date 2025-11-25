@@ -132,8 +132,10 @@ def lambda_handler(event, context):
             # Update main artifact's total cost
             cost_response[str(artifact_id)]["total_cost"] = round(total_cost, 2)
         else:
+            # When dependency=false, return both standalone_cost and total_cost (they're equal)
             cost_response = {
                 str(artifact_id): {
+                    "standalone_cost": round(storage_mb, 2),
                     "total_cost": round(storage_mb, 2)
                 }
             }

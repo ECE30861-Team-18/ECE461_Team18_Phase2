@@ -110,7 +110,7 @@ def lambda_handler(event, context):
         metadata_list = [
             {
                 "name": artifact["name"],
-                "id": str(artifact["id"]),
+                "id": artifact["id"],
                 "type": artifact["type"]
             }
             for artifact in matching_artifacts

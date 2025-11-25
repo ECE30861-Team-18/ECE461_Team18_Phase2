@@ -76,8 +76,10 @@ def lambda_handler(event, context):
             WHERE id = %s AND type = %s
         """
         
-        result = run_query(query, (artifact_id, artifact_type))
+        logger.info(f"[COST DEBUG] Executing query with params: artifact_id={artifact_id} (type={type(artifact_id)}), artifact_type={artifact_type}")
+        result = run_query(query, (artifact_id, artifact_type), fetch=True)
         logger.info(f"[COST DEBUG] Query result: {result}")
+        logger.info(f"[COST DEBUG] Query result type: {type(result)}")
         
         if not result:
             return {
@@ -107,7 +109,7 @@ def lambda_handler(event, context):
         if not dependency:
             # Return just the total cost (same as standalone when no dependencies)
             response_body = {
-                str(artifact_id): {
+                artifact_id: {
                     "total_cost": standalone_cost
                 }
             }
@@ -132,7 +134,7 @@ def lambda_handler(event, context):
                         WHERE id IN ({placeholders})
                     """
                     
-                    dep_results = run_query(dep_query, tuple(dep_ids))
+                    dep_results = run_query(dep_query, tuple(dep_ids), fetch=True)
                     
                     for dep in dep_results:
                         dep_id = dep[0]
@@ -148,7 +150,7 @@ def lambda_handler(event, context):
                             dep_metadata = {}
                         
                         dep_cost = float(dep_metadata.get('size', 0))
-                        dependency_costs[str(dep_id)] = {
+                        dependency_costs[dep_id] = {
                             "standalone_cost": dep_cost,
                             "total_cost": dep_cost
                         }
@@ -156,7 +158,7 @@ def lambda_handler(event, context):
             
             # Build response with main artifact and dependencies
             response_body = {
-                str(artifact_id): {
+                artifact_id: {
                     "standalone_cost": standalone_cost,
                     "total_cost": total_cost
                 }

@@ -89,7 +89,7 @@ def lambda_handler(event, context):
             }
         
         artifact = result[0]
-        metadata = artifact[3]
+        metadata = artifact['metadata']
         
         # Parse metadata if it's a string
         if isinstance(metadata, str):
@@ -137,8 +137,8 @@ def lambda_handler(event, context):
                     dep_results = run_query(dep_query, tuple(dep_ids), fetch=True)
                     
                     for dep in dep_results:
-                        dep_id = dep[0]
-                        dep_metadata = dep[1]
+                        dep_id = dep['id']
+                        dep_metadata = dep['metadata']
                         
                         # Parse dependency metadata
                         if isinstance(dep_metadata, str):

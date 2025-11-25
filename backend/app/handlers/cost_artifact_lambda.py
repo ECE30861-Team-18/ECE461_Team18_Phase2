@@ -113,7 +113,7 @@ def lambda_handler(event, context):
         if not dependency:
             # Return just the total cost (same as standalone when no dependencies)
             response_body = {
-                artifact_id: {
+                str(artifact_id): {
                     "total_cost": standalone_cost
                 }
             }
@@ -160,7 +160,7 @@ def lambda_handler(event, context):
                         else:
                             dep_cost = 0.0
                             
-                        dependency_costs[dep_id] = {
+                        dependency_costs[str(dep_id)] = {
                             "standalone_cost": dep_cost,
                             "total_cost": dep_cost
                         }
@@ -168,7 +168,7 @@ def lambda_handler(event, context):
             
             # Build response with main artifact and dependencies
             response_body = {
-                artifact_id: {
+                str(artifact_id): {
                     "standalone_cost": standalone_cost,
                     "total_cost": total_cost
                 }

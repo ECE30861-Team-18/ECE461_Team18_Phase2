@@ -20,9 +20,10 @@ def lambda_handler(event, context):
     Returns cost in MB based on artifact storage size.
     
     Cost is calculated from metadata.used_storage (bytes) / (1024 * 1024) = MB
+    Costs are calculated once and stored in database (metadata.standalone_cost, metadata.total_cost)
     
     Response format:
-    - Without dependency: {"artifact_id": {"total_cost": float}}
+    - Without dependency: {"artifact_id": {"standalone_cost": float, "total_cost": float}} (equal values)
     - With dependency: {"artifact_id": {"standalone_cost": float, "total_cost": float}, ...}
     """
     try:
@@ -85,28 +86,75 @@ def lambda_handler(event, context):
             except json.JSONDecodeError:
                 metadata = {}
         
-        # Get storage in bytes and convert to MB
-        used_storage_bytes = metadata.get('used_storage', 0)
-        storage_mb = float(used_storage_bytes) / (1024 * 1024) if used_storage_bytes else 0.0
-        
-        if dependency:
-            # Query dependencies from metadata
+        # Check if costs are already calculated and stored
+        if 'standalone_cost' in metadata and 'total_cost' in metadata:
+            print(f"[COST] Using stored costs for artifact {artifact_id_int}")
+            standalone_cost = metadata['standalone_cost']
+            total_cost = metadata['total_cost']
+            
+            if not dependency:
+                # Return only this artifact
+                cost_response = {
+                    str(artifact_id): {
+                        "standalone_cost": standalone_cost,
+                        "total_cost": total_cost
+                    }
+                }
+            else:
+                # Return this artifact and all its dependencies with their stored costs
+                cost_response = {
+                    str(artifact_id): {
+                        "standalone_cost": standalone_cost,
+                        "total_cost": total_cost
+                    }
+                }
+                
+                dependencies_list = metadata.get('dependencies', [])
+                if dependencies_list:
+                    dep_ids = [int(dep) for dep in dependencies_list if isinstance(dep, (int, str))]
+                    if dep_ids:
+                        placeholders = ','.join(['%s'] * len(dep_ids))
+                        dep_sql = f"""
+                        SELECT id, metadata
+                        FROM artifacts
+                        WHERE id IN ({placeholders});
+                        """
+                        dep_results = run_query(dep_sql, params=tuple(dep_ids), fetch=True)
+                        
+                        for dep in dep_results:
+                            dep_metadata = dep.get('metadata', {})
+                            if isinstance(dep_metadata, str):
+                                try:
+                                    dep_metadata = json.loads(dep_metadata)
+                                except json.JSONDecodeError:
+                                    dep_metadata = {}
+                            
+                            cost_response[str(dep['id'])] = {
+                                "standalone_cost": dep_metadata.get('standalone_cost', 0),
+                                "total_cost": dep_metadata.get('total_cost', 0)
+                            }
+        else:
+            # Calculate costs for the first time
+            print(f"[COST] Calculating costs for artifact {artifact_id_int}")
+            
+            # Get storage in bytes and convert to MB
+            used_storage_bytes = metadata.get('used_storage', 0)
+            storage_mb = float(used_storage_bytes) / (1024 * 1024) if used_storage_bytes else 0.0
+            standalone_cost = round_to_half(storage_mb)
+            
+            # Get dependencies
             dependencies_list = metadata.get('dependencies', [])
             
-            cost_response = {
-                str(artifact_id): {
-                    "standalone_cost": round_to_half(storage_mb),
-                    "total_cost": round_to_half(storage_mb)
+            # Collect all artifacts to update (main + dependencies)
+            artifacts_to_update = {
+                artifact_id_int: {
+                    'standalone_cost': standalone_cost,
+                    'metadata': metadata
                 }
             }
             
-            # Calculate total cost including dependencies
-            total_cost = storage_mb
-            
             if dependencies_list:
-                # Query all dependencies
                 dep_ids = [int(dep) for dep in dependencies_list if isinstance(dep, (int, str))]
-                
                 if dep_ids:
                     placeholders = ','.join(['%s'] * len(dep_ids))
                     dep_sql = f"""
@@ -114,7 +162,6 @@ def lambda_handler(event, context):
                     FROM artifacts
                     WHERE id IN ({placeholders});
                     """
-                    
                     dep_results = run_query(dep_sql, params=tuple(dep_ids), fetch=True)
                     
                     for dep in dep_results:
@@ -127,24 +174,46 @@ def lambda_handler(event, context):
                         
                         dep_storage_bytes = dep_metadata.get('used_storage', 0)
                         dep_storage_mb = float(dep_storage_bytes) / (1024 * 1024) if dep_storage_bytes else 0.0
+                        dep_standalone = round_to_half(dep_storage_mb)
                         
-                        total_cost += dep_storage_mb
-                        
-                        cost_response[str(dep['id'])] = {
-                            "standalone_cost": round_to_half(dep_storage_mb),
-                            "total_cost": round_to_half(dep_storage_mb)
+                        artifacts_to_update[dep['id']] = {
+                            'standalone_cost': dep_standalone,
+                            'metadata': dep_metadata
                         }
             
-            # Update main artifact's total cost
-            cost_response[str(artifact_id)]["total_cost"] = round_to_half(total_cost)
-        else:
-            # When dependency=false, return both standalone_cost and total_cost (they're equal)
-            cost_response = {
-                str(artifact_id): {
-                    "standalone_cost": round_to_half(storage_mb),
-                    "total_cost": round_to_half(storage_mb)
+            # Calculate total cost (sum of all standalone costs)
+            total_cost = sum(art['standalone_cost'] for art in artifacts_to_update.values())
+            total_cost = round_to_half(total_cost)
+            
+            # Update all artifacts in the database with their costs
+            for art_id, art_data in artifacts_to_update.items():
+                art_metadata = art_data['metadata']
+                art_metadata['standalone_cost'] = art_data['standalone_cost']
+                art_metadata['total_cost'] = total_cost
+                
+                update_sql = """
+                UPDATE artifacts
+                SET metadata = %s
+                WHERE id = %s;
+                """
+                run_query(update_sql, params=(json.dumps(art_metadata), art_id), fetch=False)
+                print(f"[COST] Updated costs for artifact {art_id}: standalone={art_data['standalone_cost']}, total={total_cost}")
+            
+            # Build response
+            if not dependency:
+                cost_response = {
+                    str(artifact_id): {
+                        "standalone_cost": standalone_cost,
+                        "total_cost": total_cost
+                    }
                 }
-            }
+            else:
+                cost_response = {}
+                for art_id, art_data in artifacts_to_update.items():
+                    cost_response[str(art_id)] = {
+                        "standalone_cost": art_data['standalone_cost'],
+                        "total_cost": total_cost
+                    }
         
         print(f"[COST] Returning response: {json.dumps(cost_response)}")
         

@@ -61,6 +61,17 @@ Resources:
                       type: string
                       format: uri
 
+            ArtifactMetadata:
+              type: object
+              required: [name, id, type]
+              properties:
+                name:
+                  type: string
+                id:
+                  type: string
+                type:
+                  $ref: "#/components/schemas/ArtifactType"
+
         paths:
           /artifacts:
             post:
@@ -365,6 +376,56 @@ Resources:
                 httpMethod: POST
                 type: aws_proxy
 
+          /artifact/byRegEx:
+            post:
+              operationId: ArtifactByRegExGet
+              summary: Get any artifacts fitting the regular expression (BASELINE).
+              description: >
+                Search for an artifact using regular expression over artifact names
+                and READMEs. This is similar to search by name.
+              parameters:
+                - name: X-Authorization
+                  in: header
+                  required: true
+                  description: Authentication header
+                  schema:
+                    $ref: "#/components/schemas/AuthenticationToken"
+
+              requestBody:
+                required: true
+                content:
+                  application/json:
+                    schema:
+                      type: object
+                      required: [regex]
+                      properties:
+                        regex:
+                          type: string
+                          description: A regular expression over artifact names and READMEs
+
+              responses:
+                "200":
+                  description: Return a list of artifacts.
+                  content:
+                    application/json:
+                      schema:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/ArtifactMetadata"
+                "400":
+                  description: There is missing field(s) in the artifact_regex or it is formed improperly, or is invalid
+                "403":
+                  description: Authentication failed due to invalid or missing AuthenticationToken.
+                "404":
+                  description: No artifact found under this regex.
+
+              #  Integrate with Lambda
+              x-amazon-apigateway-integration:
+                uri:
+                  Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetArtifactByRegExLambda.Arn}/invocations
+                httpMethod: POST
+                type: aws_proxy
+
             
       Cors:
         AllowMethods: "'OPTIONS,GET,POST,PUT,DELETE'"
@@ -477,6 +538,24 @@ Resources:
           Properties:
             Path: /reset         # route on API Gateway
             Method: delete                        # HTTP DELETE method
+            RestApiId: !Ref ece461Ph2Api
+      Environment:
+        Variables:
+          ENVIRONMENT: dev
+
+  GetArtifactByRegExLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: get_artifact_by_regex_lambda
+      Handler: get_artifact_by_regex_lambda.lambda_handler   # file.lambda_handler
+      CodeUri: ./backend/app/handlers                  # directory with lambda_function.py
+      Description: Lambda function to search artifacts by regex pattern
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            Path: /artifact/byRegEx         # route on API Gateway
+            Method: post                        # HTTP POST method
             RestApiId: !Ref ece461Ph2Api
       Environment:
         Variables:

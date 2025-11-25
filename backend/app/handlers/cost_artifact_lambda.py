@@ -20,10 +20,14 @@ def lambda_handler(event, context):
     - With dependency: {"artifact_id": {"standalone_cost": float, "total_cost": float}, ...}
     """
     try:
+        print(f"[COST] Event: {json.dumps(event)}")
+        
         # Extract path parameters
         path_params = event.get('pathParameters', {})
         artifact_id = path_params.get('id')
         artifact_type = path_params.get('artifact_type')
+        
+        print(f"[COST] artifact_type={artifact_type}, artifact_id={artifact_id}")
         
         if not artifact_id or not artifact_type:
             return {
@@ -46,6 +50,8 @@ def lambda_handler(event, context):
         query_params = event.get('queryStringParameters') or {}
         dependency = query_params.get('dependency', 'false').lower() == 'true'
         
+        print(f"[COST] dependency={dependency}, querying artifact {artifact_id_int}")
+        
         # Query artifact to check if it exists and get its storage
         sql = """
         SELECT id, type, metadata
@@ -56,6 +62,7 @@ def lambda_handler(event, context):
         results = run_query(sql, params=(artifact_id_int, artifact_type), fetch=True)
         
         if not results or len(results) == 0:
+            print(f"[COST] Artifact {artifact_id_int} not found")
             return {
                 'statusCode': 404,
                 'headers': {'Content-Type': 'application/json'},
@@ -131,6 +138,8 @@ def lambda_handler(event, context):
                 }
             }
         
+        print(f"[COST] Returning response: {json.dumps(cost_response)}")
+        
         return {
             'statusCode': 200,
             'headers': {
@@ -143,6 +152,7 @@ def lambda_handler(event, context):
         }
         
     except Exception as e:
+        print(f"[COST] Error: {e}")
         import traceback
         traceback.print_exc()
         return {

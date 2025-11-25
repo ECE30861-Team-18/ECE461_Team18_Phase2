@@ -19,17 +19,29 @@ def lambda_handler(event, context):
     Returns all artifacts (metadata only) matching the given name.
     """
     try:
+        # Log the full incoming event for debugging autograder requests
+        print(f"[AUTOGRADER DEBUG] Full event: {json.dumps(event)}")
+        print(f"[AUTOGRADER DEBUG] Path parameters: {event.get('pathParameters', {})}")
+        print(f"[AUTOGRADER DEBUG] Query parameters: {event.get('queryStringParameters', {})}")
+        print(f"[AUTOGRADER DEBUG] Headers: {json.dumps(event.get('headers', {}), indent=2)}")
+        print(f"[AUTOGRADER DEBUG] HTTP Method: {event.get('httpMethod', 'UNKNOWN')}")
+        print(f"[AUTOGRADER DEBUG] Resource: {event.get('resource', 'UNKNOWN')}")
+        print(f"[AUTOGRADER DEBUG] Path: {event.get('path', 'UNKNOWN')}")
+        
         # Extract name from path parameters
         path_params = event.get("pathParameters", {})
         name = path_params.get("name")
+        print(f"[AUTOGRADER DEBUG] Extracted name from path: '{name}'")
         
         # Validate name parameter
         if not name:
-            return {
+            response = {
                 "statusCode": 400,
                 "headers": {"Content-Type": "application/json"},
                 "body": json.dumps({"error": "Missing artifact name in path"})
             }
+            print(f"[AUTOGRADER DEBUG] Returning 400 response: {json.dumps(response)}")
+            return response
         
         # Query database for all artifacts with this name
         sql = """
@@ -43,11 +55,13 @@ def lambda_handler(event, context):
         
         # Return 404 if no artifacts found
         if not artifacts:
-            return {
+            response = {
                 "statusCode": 404,
                 "headers": {"Content-Type": "application/json"},
                 "body": json.dumps({"error": "No such artifact"})
             }
+            print(f"[AUTOGRADER DEBUG] Returning 404 response: {json.dumps(response)}")
+            return response
         
         # Deserialize JSON fields if needed
         for artifact in artifacts:
@@ -63,7 +77,7 @@ def lambda_handler(event, context):
             for artifact in artifacts
         ]
         
-        return {
+        response = {
             "statusCode": 200,
             "headers": {
                 "Content-Type": "application/json",
@@ -73,11 +87,15 @@ def lambda_handler(event, context):
             },
             "body": json.dumps(metadata_list, default=str)
         }
+        print(f"[AUTOGRADER DEBUG] Returning response: {json.dumps(response)}")
+        return response
         
     except Exception as e:
         print(f"Error in get_artifact_by_name_lambda: {e}")
-        return {
+        response = {
             "statusCode": 500,
             "headers": {"Content-Type": "application/json"},
             "body": json.dumps({"error": str(e)})
         }
+        print(f"[AUTOGRADER DEBUG] Returning 500 response: {json.dumps(response)}")
+        return response

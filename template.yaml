@@ -31,6 +31,15 @@ Globals:
 Resources:
 
   #########################################################
+  # CloudWatch Log Group for API Gateway
+  #########################################################
+  ApiGatewayLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/apigateway/${AWS::StackName}-api
+      RetentionInDays: 7
+
+  #########################################################
   # API Gateway
   #########################################################
   ece461Ph2Api:
@@ -38,6 +47,15 @@ Resources:
     Properties:
       StageName: dev
       Description: ECE461 Phase 2 API Gateway (OpenAPI Spec)
+      AccessLogSetting:
+        DestinationArn: !GetAtt ApiGatewayLogGroup.Arn
+        Format: '{"requestId":"$context.requestId","ip":"$context.identity.sourceIp","caller":"$context.identity.caller","user":"$context.identity.user","requestTime":"$context.requestTime","httpMethod":"$context.httpMethod","resourcePath":"$context.resourcePath","status":"$context.status","protocol":"$context.protocol","responseLength":"$context.responseLength","requestHeaders":"$context.requestHeaders","errorMessage":"$context.error.message","errorType":"$context.error.messageString"}'
+      MethodSettings:
+        - DataTraceEnabled: true
+          HttpMethod: "*"
+          LoggingLevel: INFO
+          ResourcePath: "/*"
+          MetricsEnabled: true
       DefinitionBody:
         openapi: 3.0.2
         info:

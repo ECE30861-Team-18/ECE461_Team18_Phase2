@@ -1116,6 +1116,42 @@ Resources:
                 httpMethod: POST
                 type: aws_proxy
 
+          /artifact/model/{id}/rate:
+            get:
+              parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: X-Authorization
+                  in: header
+                  required: false
+                  schema:
+                    type: string
+              responses:
+                "200":
+                  description: Return the rating
+                  content:
+                    application/json:
+                      schema:
+                        type: object
+                "400":
+                  description: Missing or invalid artifact_id
+                "403":
+                  description: Authentication failed
+                "404":
+                  description: Artifact does not exist
+                "500":
+                  description: Rating system error
+              operationId: ModelArtifactRate
+              summary: Get ratings for this model artifact
+              x-amazon-apigateway-integration:
+                uri:
+                  Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${RateArtifactLambda.Arn}/invocations
+                httpMethod: POST
+                type: aws_proxy
+
       Cors:
         AllowMethods: "'OPTIONS,GET,POST,PUT,DELETE'"
         AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
@@ -1361,6 +1397,27 @@ Resources:
           Properties:
             Path: /artifact/byRegEx
             Method: post
+            RestApiId: !Ref ece461Ph2Api
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:DB_CREDS-*
+
+  RateArtifactLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: rate_artifact_lambda
+      Handler: handlers/rate_artifact_lambda.lambda_handler
+      CodeUri: ./backend/app
+      Description: Lambda for getting model ratings
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            Path: /artifact/model/{id}/rate
+            Method: get
             RestApiId: !Ref ece461Ph2Api
       Policies:
         - AWSLambdaBasicExecutionRole

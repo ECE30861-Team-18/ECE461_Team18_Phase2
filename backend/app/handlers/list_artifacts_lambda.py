@@ -26,38 +26,50 @@ def lambda_handler(event, context):
 
         print(f"Query filters: {query_filters}")
 
-        # Build SQL query with type filtering
+        # Build SQL query with name and type filtering
+        # ArtifactQuery schema: { "name": "pattern", "types": ["model", "dataset"] }
+        
+        where_clauses = []
+        params = []
+        
         if query_filters and len(query_filters) > 0:
-            # Extract artifact types from query filters
-            types = []
             for query in query_filters:
-                if isinstance(query, dict) and "Type" in query:
-                    types.append(query["Type"])
-            
-            if types:
-                placeholders = ", ".join(["%s"] * len(types))
-                sql = f"""
-                SELECT id, type, name, source_url, download_url, net_score, ratings, status, metadata, created_at
-                FROM artifacts
-                WHERE type IN ({placeholders})
-                ORDER BY created_at DESC;
-                """
-                artifacts = run_query(sql, params=tuple(types), fetch=True)
-            else:
-                # No type filter, return all
-                sql = """
-                SELECT id, type, name, source_url, download_url, net_score, ratings, status, metadata, created_at
-                FROM artifacts
-                ORDER BY created_at DESC;
-                """
-                artifacts = run_query(sql, fetch=True)
+                if not isinstance(query, dict):
+                    continue
+                
+                # Handle name filtering (with wildcard support)
+                name_pattern = query.get("name", "*")
+                if name_pattern and name_pattern != "*":
+                    # Convert wildcard * to SQL LIKE pattern %
+                    sql_pattern = name_pattern.replace("*", "%")
+                    where_clauses.append("name LIKE %s")
+                    params.append(sql_pattern)
+                
+                # Handle types filtering
+                types = query.get("types", [])
+                if types and len(types) > 0:
+                    placeholders = ", ".join(["%s"] * len(types))
+                    where_clauses.append(f"type IN ({placeholders})")
+                    params.extend(types)
+        
+        # Build final SQL query
+        sql = """
+        SELECT id, type, name, source_url, download_url, net_score, ratings, status, metadata, created_at
+        FROM artifacts
+        """
+        
+        if where_clauses:
+            # Use OR to combine conditions from multiple queries
+            sql += " WHERE " + " OR ".join(f"({clause})" for clause in where_clauses)
+        
+        sql += " ORDER BY created_at DESC;"
+        
+        print(f"Executing SQL: {sql}")
+        print(f"With params: {params}")
+        
+        if params:
+            artifacts = run_query(sql, params=tuple(params), fetch=True)
         else:
-            # Empty query array means return all artifacts
-            sql = """
-            SELECT id, type, name, source_url, download_url, net_score, ratings, status, metadata, created_at
-            FROM artifacts
-            ORDER BY created_at DESC;
-            """
             artifacts = run_query(sql, fetch=True)
 
         if not artifacts:

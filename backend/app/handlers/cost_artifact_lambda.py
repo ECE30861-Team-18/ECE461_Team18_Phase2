@@ -101,10 +101,14 @@ def lambda_handler(event, context):
             metadata = {}
         
         # Calculate standalone cost from metadata
-        # Size is typically in metadata, defaulting to 0 if not present
-        standalone_cost = float(metadata.get('size', 0))
+        # Size is in 'used_storage' field (in bytes), convert to MB
+        used_storage_bytes = metadata.get('used_storage', 0)
+        if used_storage_bytes:
+            standalone_cost = float(used_storage_bytes) / (1024 * 1024)  # Convert bytes to MB
+        else:
+            standalone_cost = 0.0
         
-        logger.info(f"[COST DEBUG] Artifact {artifact_id} standalone_cost: {standalone_cost}")
+        logger.info(f"[COST DEBUG] Artifact {artifact_id} used_storage={used_storage_bytes} bytes, standalone_cost={standalone_cost} MB")
         
         if not dependency:
             # Return just the total cost (same as standalone when no dependencies)
@@ -149,7 +153,13 @@ def lambda_handler(event, context):
                         elif not isinstance(dep_metadata, dict):
                             dep_metadata = {}
                         
-                        dep_cost = float(dep_metadata.get('size', 0))
+                        # Get dependency cost from used_storage field
+                        dep_storage_bytes = dep_metadata.get('used_storage', 0)
+                        if dep_storage_bytes:
+                            dep_cost = float(dep_storage_bytes) / (1024 * 1024)  # Convert bytes to MB
+                        else:
+                            dep_cost = 0.0
+                            
                         dependency_costs[dep_id] = {
                             "standalone_cost": dep_cost,
                             "total_cost": dep_cost

@@ -17,12 +17,48 @@ def lambda_handler(event, context):
     print("Incoming event:", json.dumps(event, indent=2))
 
     try:
-        sql = """
-        SELECT id, type, name, source_url, download_url, net_score, ratings, status, metadata, created_at
-        FROM artifacts
-        ORDER BY created_at DESC;
-        """
-        artifacts = run_query(sql, fetch=True)
+        # Parse the request body for query filters
+        body = event.get("body", "[]")
+        if isinstance(body, str):
+            query_filters = json.loads(body) if body.strip() else []
+        else:
+            query_filters = body
+
+        print(f"Query filters: {query_filters}")
+
+        # Build SQL query with type filtering
+        if query_filters and len(query_filters) > 0:
+            # Extract artifact types from query filters
+            types = []
+            for query in query_filters:
+                if isinstance(query, dict) and "Type" in query:
+                    types.append(query["Type"])
+            
+            if types:
+                placeholders = ", ".join(["%s"] * len(types))
+                sql = f"""
+                SELECT id, type, name, source_url, download_url, net_score, ratings, status, metadata, created_at
+                FROM artifacts
+                WHERE type IN ({placeholders})
+                ORDER BY created_at DESC;
+                """
+                artifacts = run_query(sql, params=tuple(types), fetch=True)
+            else:
+                # No type filter, return all
+                sql = """
+                SELECT id, type, name, source_url, download_url, net_score, ratings, status, metadata, created_at
+                FROM artifacts
+                ORDER BY created_at DESC;
+                """
+                artifacts = run_query(sql, fetch=True)
+        else:
+            # Empty query array means return all artifacts
+            sql = """
+            SELECT id, type, name, source_url, download_url, net_score, ratings, status, metadata, created_at
+            FROM artifacts
+            ORDER BY created_at DESC;
+            """
+            artifacts = run_query(sql, fetch=True)
 
         if not artifacts:
             artifacts = []

@@ -124,7 +124,7 @@ class URLHandler:
         path_parts = [part for part in parsed_url.path.split('/') if part]
         
         # Handle different Hugging Face URL patterns
-        # Examples: /username/model-name, /datasets/username/dataset-name, /spaces/username/space-name
+        # Examples: /username/model-name, /datasets/username/dataset-name, /spaces/username/space-name, /model-name
         if len(path_parts) >= 2:
             if path_parts[0] in ['datasets', 'spaces']:
                 # For datasets and spaces: /datasets/user/name or /spaces/user/name
@@ -161,6 +161,16 @@ class URLHandler:
                     'repository': model_name,
                     'package_name': model_name
                 }
+        elif len(path_parts) == 1:
+            # For single-part paths: /model-name (models without explicit user)
+            model_name = path_parts[0]
+            logger.debug("extract_huggingface_identifier: extracted model name %s from %s", model_name, parsed_url.path)
+            return {
+                'unique_identifier': model_name,
+                'owner': None,
+                'repository': model_name,
+                'package_name': model_name
+            }
         
         return {'unique_identifier': None, 'owner': None, 'repository': None, 'package_name': None}
     

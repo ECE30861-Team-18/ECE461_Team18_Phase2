@@ -160,14 +160,13 @@ def lambda_handler(event, context):
             return response
 
         # --------------------------
-        # 4. RATING PIPELINE
+        # 4. RATING PIPELINE (only for models)
         # --------------------------
         url_handler = URLHandler()
         data_retriever = DataRetriever(
             github_token=os.environ.get("GITHUB_TOKEN"),
             hf_token=os.environ.get("HF_TOKEN")
         )
-        calc = MetricCalculator()
 
         model_obj: URLData = url_handler.handle_url(url)
 
@@ -203,8 +202,14 @@ def lambda_handler(event, context):
             "name": artifact_name
         }
 
-        rating = calc.calculate_all_metrics(model_dict, category="MODEL")
-        net_score = rating["net_score"]
+        # Only calculate metrics for models
+        if artifact_type == "model":
+            calc = MetricCalculator()
+            rating = calc.calculate_all_metrics(model_dict, category="MODEL")
+            net_score = rating["net_score"]
+        else:
+            rating = {}
+            net_score = None
 
         metadata_dict = repo_data.__dict__.copy()
         metadata_dict["requested_name"] = artifact_name

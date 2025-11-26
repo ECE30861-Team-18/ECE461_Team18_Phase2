@@ -86,24 +86,27 @@ def lambda_handler(event, context):
         log_response(response)  # <<< LOGGING
         return response
     
-    # Validate artifact_id format (must be numeric per database schema)
-    # The spec pattern allows alphanumeric, but the DB expects integer IDs
-    if not artifact_id.isdigit():
-        response = {
-            "statusCode": 400,
-            "headers": {"Content-Type": "application/json"},
-            "body": json.dumps({"error": "There is missing field(s) in the artifact_type or artifact_id or it is formed improperly, or is invalid."})
-        }
-        log_response(response)  # <<< LOGGING
-        return response
-
     try:
+        # Try to convert artifact_id to integer for DB query
+        # If it fails, the ID is valid per spec regex but doesn't exist in our DB → 404
+        try:
+            artifact_id_int = int(artifact_id)
+        except ValueError:
+            # Valid ID format per spec, but not in our integer-based DB
+            response = {
+                "statusCode": 404,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({"message": "Artifact not found"})
+            }
+            log_response(response)  # <<< LOGGING
+            return response
+        
         sql = """
         SELECT id, type, name, source_url, download_url, net_score, ratings, status, metadata, created_at
         FROM artifacts
         WHERE id = %s AND type = %s;
         """
-        results = run_query(sql, (artifact_id, artifact_type), fetch=True)
+        results = run_query(sql, (artifact_id_int, artifact_type), fetch=True)
 
         if not results:
             response = {

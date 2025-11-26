@@ -1240,6 +1240,60 @@ Resources:
                 httpMethod: POST
                 type: aws_proxy
 
+          /artifact/model/{id}/license-check:
+            post:
+              requestBody:
+                content:
+                  application/json:
+                    schema:
+                      $ref: "#/components/schemas/SimpleLicenseCheckRequest"
+                    examples:
+                      ExampleSimpleLicenseCheckRequest:
+                        value:
+                          github_url: https://github.com/google-research/bert
+                required: true
+              parameters:
+                - name: id
+                  description: artifact id
+                  schema:
+                    $ref: "#/components/schemas/ArtifactID"
+                  in: path
+                  required: true
+                - examples:
+                    ExampleToken:
+                      value: bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c
+                  name: X-Authorization
+                  description: ""
+                  schema:
+                    $ref: "#/components/schemas/AuthenticationToken"
+                  in: header
+                  required: false
+              responses:
+                "200":
+                  content:
+                    application/json:
+                      schema:
+                        type: boolean
+                      examples:
+                        ExampleSimpleLicenseCheckResult:
+                          value: true
+                  description: License compatibility analysis produced successfully. (BASELINE)
+                "400":
+                  description: "The license check request is malformed or references an unsupported usage context."
+                "403":
+                  description: Authentication failed due to invalid or missing AuthenticationToken.
+                "404":
+                  description: The artifact or GitHub project could not be found.
+                "502":
+                  description: External license information could not be retrieved.
+              operationId: ArtifactLicenseCheck
+              summary: Assess license compatibility for fine-tune and inference usage. (BASELINE)
+              x-amazon-apigateway-integration:
+                uri:
+                  Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LicenseCheckLambda.Arn}/invocations
+                httpMethod: POST
+                type: aws_proxy
+
       Cors:
         AllowMethods: "'OPTIONS,GET,POST,PUT,DELETE'"
         AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
@@ -1555,6 +1609,27 @@ Resources:
             - Effect: Allow
               Action: secretsmanager:GetSecretValue
               Resource: !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:DB_CREDS-*
+
+  LicenseCheckLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: license_check_lambda
+      Handler: handlers/license_check_lambda.lambda_handler
+      CodeUri: ./backend/app
+      Description: Lambda for checking license compatibility
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            Path: /artifact/model/{id}/license-check
+            Method: post
+            RestApiId: !Ref ece461Ph2Api
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:DB_CREDS-*
   
   
   #########################################################
@@ -1662,6 +1737,14 @@ Resources:
     Properties:
       Action: lambda:InvokeFunction
       FunctionName: !GetAtt RateArtifactLambda.Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ece461Ph2Api}/*/*/*
+
+  LicenseCheckPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt LicenseCheckLambda.Arn
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ece461Ph2Api}/*/*/*
 

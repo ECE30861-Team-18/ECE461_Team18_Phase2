@@ -1,15 +1,59 @@
 import json
 import os
-import requests
 from rds_connection import run_query
+from url_handler import URLHandler
+from data_retrieval import GitHubAPIClient
+import traceback  # <<< LOGGING
 
 
+# -----------------------------
+# LOGGING HELPERS
+# -----------------------------
+def log_event(event, context):  # <<< LOGGING
+    print("==== INCOMING EVENT ====")
+    try:
+        print(json.dumps(event, indent=2))
+    except:
+        print(event)
+
+    print("==== CONTEXT ====")
+    try:
+        print(json.dumps({
+            "aws_request_id": context.aws_request_id,
+            "function_name": context.function_name,
+            "memory_limit_in_mb": context.memory_limit_in_mb,
+            "function_version": context.function_version
+        }, indent=2))
+    except:
+        pass
+
+
+def log_response(response):  # <<< LOGGING
+    print("==== OUTGOING RESPONSE ====")
+    try:
+        print(json.dumps(response, indent=2))
+    except:
+        print(response)
+
+
+def log_exception(e):  # <<< LOGGING
+    print("==== EXCEPTION OCCURRED ====")
+    print(str(e))
+    traceback.print_exc()
+
+
+# -----------------------------
+# Lambda Handler
+# -----------------------------
 def lambda_handler(event, context):
     """
     POST /artifact/model/{id}/license-check
     Assess license compatibility between a model and a GitHub project
     for fine-tuning and inference usage.
     """
+
+    log_event(event, context)  # <<< LOGGING
+
     print(f"[LICENSE_CHECK] Incoming event: {json.dumps(event, indent=2)}")
     
     try:
@@ -18,11 +62,13 @@ def lambda_handler(event, context):
         artifact_id = path_params.get("id")
         
         if not artifact_id:
-            return {
+            response = {
                 "statusCode": 400,
                 "headers": {"Content-Type": "application/json"},
                 "body": json.dumps({"error": "The license check request is malformed or references an unsupported usage context."})
             }
+            log_response(response)  # <<< LOGGING
+            return response
         
         # Parse request body to get github_url
         body = event.get("body", "{}")
@@ -30,19 +76,23 @@ def lambda_handler(event, context):
             try:
                 body = json.loads(body)
             except json.JSONDecodeError:
-                return {
+                response = {
                     "statusCode": 400,
                     "headers": {"Content-Type": "application/json"},
                     "body": json.dumps({"error": "The license check request is malformed or references an unsupported usage context."})
                 }
+                log_response(response)  # <<< LOGGING
+                return response
         
         github_url = body.get("github_url")
         if not github_url:
-            return {
+            response = {
                 "statusCode": 400,
                 "headers": {"Content-Type": "application/json"},
                 "body": json.dumps({"error": "The license check request is malformed or references an unsupported usage context."})
             }
+            log_response(response)  # <<< LOGGING
+            return response
         
         print(f"[LICENSE_CHECK] Checking license compatibility for artifact {artifact_id} with GitHub project: {github_url}")
         
@@ -50,11 +100,13 @@ def lambda_handler(event, context):
         try:
             artifact_id = int(artifact_id)
         except (ValueError, TypeError):
-            return {
+            response = {
                 "statusCode": 400,
                 "headers": {"Content-Type": "application/json"},
                 "body": json.dumps({"error": "The license check request is malformed or references an unsupported usage context."})
             }
+            log_response(response)  # <<< LOGGING
+            return response
         
         # Query artifact to verify it exists and is a model
         sql = """
@@ -67,11 +119,13 @@ def lambda_handler(event, context):
         
         if not results or len(results) == 0:
             print(f"[LICENSE_CHECK] Artifact {artifact_id} not found or not a model")
-            return {
+            response = {
                 "statusCode": 404,
                 "headers": {"Content-Type": "application/json"},
                 "body": json.dumps({"error": "The artifact or GitHub project could not be found."})
             }
+            log_response(response)  # <<< LOGGING
+            return response
         
         artifact = results[0]
         metadata = artifact.get("metadata", {})
@@ -88,24 +142,28 @@ def lambda_handler(event, context):
         
         print(f"[LICENSE_CHECK] Model license: {model_license}")
         
-        # Fetch GitHub project license via API
+        # Parse and fetch GitHub project license using existing tools
         github_license = _fetch_github_license(github_url)
         
         if github_license == "not_found":
             print(f"[LICENSE_CHECK] GitHub repository not found")
-            return {
+            response = {
                 "statusCode": 404,
                 "headers": {"Content-Type": "application/json"},
                 "body": json.dumps({"error": "The artifact or GitHub project could not be found."})
             }
+            log_response(response)  # <<< LOGGING
+            return response
         
         if github_license is None:
             print(f"[LICENSE_CHECK] Failed to retrieve GitHub license information")
-            return {
+            response = {
                 "statusCode": 502,
                 "headers": {"Content-Type": "application/json"},
                 "body": json.dumps({"error": "External license information could not be retrieved."})
             }
+            log_response(response)  # <<< LOGGING
+            return response
         
         print(f"[LICENSE_CHECK] GitHub project license: {github_license}")
         
@@ -114,7 +172,7 @@ def lambda_handler(event, context):
         
         print(f"[LICENSE_CHECK] Compatibility result: {is_compatible}")
         
-        return {
+        response = {
             "statusCode": 200,
             "headers": {
                 "Content-Type": "application/json",
@@ -124,21 +182,26 @@ def lambda_handler(event, context):
             },
             "body": json.dumps(is_compatible)
         }
+
+        log_response(response)  # <<< LOGGING
+        return response
         
     except Exception as e:
         print(f"[LICENSE_CHECK] Error: {e}")
-        import traceback
-        traceback.print_exc()
-        return {
+        log_exception(e)  # <<< LOGGING
+
+        response = {
             "statusCode": 500,
             "headers": {"Content-Type": "application/json"},
             "body": json.dumps({"error": "Internal server error", "details": str(e)})
         }
+        log_response(response)  # <<< LOGGING
+        return response
 
 
 def _fetch_github_license(github_url):
     """
-    Fetch license information from a GitHub repository via API.
+    Fetch license information from a GitHub repository using existing GitHubAPIClient.
     Returns:
     - license key (e.g., 'mit', 'apache-2.0') if successful
     - empty string if repo has no license
@@ -146,53 +209,36 @@ def _fetch_github_license(github_url):
     - None if API call fails
     """
     try:
-        # Parse GitHub URL to extract owner and repo
-        parts = github_url.rstrip("/").replace("https://", "").replace("http://", "").split("/")
+        # Use URLHandler to parse the GitHub URL
+        url_handler = URLHandler()
+        url_data = url_handler.handle_url(github_url)
         
-        if len(parts) < 3 or parts[0] != "github.com":
+        if not url_data.is_valid or not url_data.owner or not url_data.repository:
             print(f"[LICENSE_CHECK] Invalid GitHub URL format: {github_url}")
             return "not_found"
         
-        owner = parts[1]
-        repo = parts[2]
-        
-        # Remove .git suffix if present
-        if repo.endswith(".git"):
-            repo = repo[:-4]
+        owner = url_data.owner
+        repo = url_data.repository
         
         print(f"[LICENSE_CHECK] Fetching license for {owner}/{repo}")
         
-        # Use GitHub API to fetch license information
-        api_url = f"https://api.github.com/repos/{owner}/{repo}/license"
-        
-        # Get GitHub token from environment
         github_token = os.environ.get("GITHUB_TOKEN")
-        headers = {"Accept": "application/vnd.github.v3+json"}
-        if github_token:
-            headers["Authorization"] = f"Bearer {github_token}"
+        github_client = GitHubAPIClient(github_token)
+        repo_data = github_client.get_repository_data(owner, repo)
         
-        response = requests.get(api_url, headers=headers, timeout=10)
-        
-        if response.status_code == 404:
-            print(f"[LICENSE_CHECK] GitHub repository not found or no license file")
-            return "not_found"
-        
-        if response.status_code != 200:
-            print(f"[LICENSE_CHECK] GitHub API error: {response.status_code}")
+        if not repo_data.success:
+            print(f"[LICENSE_CHECK] Failed to fetch repository: {repo_data.error_message}")
+            if "not found" in repo_data.error_message.lower():
+                return "not_found"
             return None
         
-        data = response.json()
-        license_info = data.get("license", {})
-        license_key = license_info.get("key", "").lower()
+        license_key = repo_data.license.lower() if repo_data.license else ""
         
         print(f"[LICENSE_CHECK] Found GitHub license: {license_key}")
-        return license_key if license_key else ""
+        return license_key
         
-    except requests.exceptions.RequestException as e:
-        print(f"[LICENSE_CHECK] Request error fetching GitHub license: {e}")
-        return None
     except Exception as e:
-        print(f"[LICENSE_CHECK] Error parsing GitHub URL or fetching license: {e}")
+        print(f"[LICENSE_CHECK] Error fetching GitHub license: {e}")
         return None
 
 
@@ -207,33 +253,27 @@ def _check_license_compatibility(model_license, github_license):
     model_license_norm = model_license.strip().lower() if model_license else ""
     github_license_norm = github_license.strip().lower() if github_license else ""
     
-    # If model has no license, assume not compatible
     if not model_license_norm:
         print("[LICENSE_CHECK] Model has no license information, assuming incompatible")
         return False
     
-    # If GitHub project has no license, assume not compatible
     if not github_license_norm:
         print("[LICENSE_CHECK] GitHub project has no license, assuming incompatible")
         return False
     
-    # Define permissive licenses (generally compatible for fine-tuning and inference)
     permissive_licenses = {
         "mit", "apache-2.0", "apache", "bsd", "bsd-2-clause", "bsd-3-clause",
         "lgpl-2.1", "lgpl", "cc0-1.0", "unlicense", "isc", "cc-by-4.0"
     }
     
-    # Define copyleft licenses (require derivative works to be under same license)
     copyleft_licenses = {
         "gpl", "gpl-2.0", "gpl-3.0", "agpl", "agpl-3.0", "cc-by-sa-4.0"
     }
     
-    # Define restrictive licenses (not compatible for commercial use)
     restrictive_licenses = {
         "cc-by-nc", "cc-by-nc-sa", "cc-by-nd", "proprietary", "other"
     }
     
-    # Check if either is restrictive (e.g., non-commercial)
     model_is_restrictive = any(lic in model_license_norm for lic in restrictive_licenses)
     github_is_restrictive = any(lic in github_license_norm for lic in restrictive_licenses)
     
@@ -241,7 +281,6 @@ def _check_license_compatibility(model_license, github_license):
         print("[LICENSE_CHECK] One or both licenses are restrictive - incompatible")
         return False
     
-    # If both are permissive, compatible
     model_is_permissive = any(lic in model_license_norm for lic in permissive_licenses)
     github_is_permissive = any(lic in github_license_norm for lic in permissive_licenses)
     
@@ -249,22 +288,17 @@ def _check_license_compatibility(model_license, github_license):
         print("[LICENSE_CHECK] Both licenses are permissive - compatible")
         return True
     
-    # Check copyleft licenses
     model_is_copyleft = any(lic in model_license_norm for lic in copyleft_licenses)
     github_is_copyleft = any(lic in github_license_norm for lic in copyleft_licenses)
     
-    # If model is permissive and GitHub is copyleft, compatible
-    # (using the model doesn't create a derivative work of the GitHub code)
     if model_is_permissive and github_is_copyleft:
         print("[LICENSE_CHECK] Model is permissive, GitHub is copyleft - compatible for usage")
         return True
     
-    # If model is copyleft and GitHub is permissive, generally compatible
     if model_is_copyleft and github_is_permissive:
         print("[LICENSE_CHECK] Model is copyleft, GitHub is permissive - compatible")
         return True
     
-    # If both are copyleft, check if they're the same license
     if model_is_copyleft and github_is_copyleft:
         if model_license_norm == github_license_norm:
             print("[LICENSE_CHECK] Both have same copyleft license - compatible")
@@ -273,6 +307,5 @@ def _check_license_compatibility(model_license, github_license):
             print("[LICENSE_CHECK] Different copyleft licenses - incompatible")
             return False
     
-    # Default: if we can't determine, assume incompatible for safety
     print(f"[LICENSE_CHECK] Unable to determine compatibility - assuming incompatible")
     return False

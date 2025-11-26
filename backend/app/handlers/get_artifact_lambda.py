@@ -92,7 +92,7 @@ def lambda_handler(event, context):
         response = {
             "statusCode": 400,
             "headers": {"Content-Type": "application/json"},
-            "body": json.dumps({"error": "Invalid artifact_id format. Must be a numeric string."})
+            "body": json.dumps({"error": "There is missing field(s) in the artifact_type or artifact_id or it is formed improperly, or is invalid."})
         }
         log_response(response)  # <<< LOGGING
         return response

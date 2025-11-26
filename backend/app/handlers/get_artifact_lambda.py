@@ -86,12 +86,13 @@ def lambda_handler(event, context):
         log_response(response)  # <<< LOGGING
         return response
     
-    # Validate artifact_id format (alphanumeric and hyphens only per spec)
-    if not re.match(r'^[a-zA-Z0-9\-]+$', artifact_id):
+    # Validate artifact_id format (must be numeric per database schema)
+    # The spec pattern allows alphanumeric, but the DB expects integer IDs
+    if not artifact_id.isdigit():
         response = {
             "statusCode": 400,
             "headers": {"Content-Type": "application/json"},
-            "body": json.dumps({"error": "Invalid artifact_id format. Must contain only alphanumeric characters and hyphens."})
+            "body": json.dumps({"error": "Invalid artifact_id format. Must be a numeric string."})
         }
         log_response(response)  # <<< LOGGING
         return response

@@ -8,4 +8,5 @@ class URLCategory(Enum):
     GITHUB = "github"
     NPM = "npm"
     HUGGINGFACE = "huggingface"
+    KAGGLE = "kaggle"
     UNKNOWN = "unknown"

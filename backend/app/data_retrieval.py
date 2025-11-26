@@ -487,6 +487,18 @@ class DataRetriever:
                 )
             logger.info("DataRetriever: fetching Hugging Face model data for %s", identifier)
             return self.huggingface_client.get_model_data(identifier)
+        elif url_data.category == URLCategory.KAGGLE:
+            identifier = url_data.unique_identifier or "unknown"
+            name = identifier.split('/')[-1] if '/' in identifier else identifier
+            logger.info("DataRetriever: Kaggle dataset %s (stub data)", identifier)
+            # Return basic stub data for Kaggle - we don't call their API
+            return RepositoryData(
+                platform="kaggle",
+                identifier=identifier,
+                name=name,
+                description="Kaggle dataset",
+                success=True
+            )
         else:
             identifier = url_data.unique_identifier or "unknown"
             name = identifier.split('/')[-1] if '/' in identifier else identifier

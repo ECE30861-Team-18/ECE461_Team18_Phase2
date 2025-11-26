@@ -116,10 +116,10 @@ def lambda_handler(event, context):
                 log_response(response)  # <<< LOGGING
                 return response
         elif artifact_type == "dataset":
-            if parsed_data.category != URLCategory.HUGGINGFACE:
+            if parsed_data.category not in (URLCategory.HUGGINGFACE, URLCategory.GITHUB, URLCategory.KAGGLE):
                 response = {
                     "statusCode": 400,
-                    "body": json.dumps({"error": "Dataset must use a Hugging Face URL"})
+                    "body": json.dumps({"error": "Dataset must use a Hugging Face, GitHub, or Kaggle URL"})
                 }
                 log_response(response)  # <<< LOGGING
                 return response
@@ -178,11 +178,19 @@ def lambda_handler(event, context):
             log_response(response)  # <<< LOGGING
             return response
 
-        if artifact_type in ("model", "dataset"):
+        if artifact_type == "model":
             if model_obj.category != URLCategory.HUGGINGFACE:
                 response = {
                     "statusCode": 400,
-                    "body": json.dumps({"error": "URL is not a valid Hugging Face URL"})
+                    "body": json.dumps({"error": "Model must use a Hugging Face URL"})
+                }
+                log_response(response)  # <<< LOGGING
+                return response
+        elif artifact_type == "dataset":
+            if model_obj.category not in (URLCategory.HUGGINGFACE, URLCategory.GITHUB, URLCategory.KAGGLE):
+                response = {
+                    "statusCode": 400,
+                    "body": json.dumps({"error": "Dataset must use a Hugging Face, GitHub, or Kaggle URL"})
                 }
                 log_response(response)  # <<< LOGGING
                 return response

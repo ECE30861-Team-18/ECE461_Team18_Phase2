@@ -26,6 +26,8 @@ class URLHandler:
             'www.npmjs.com': URLCategory.NPM,
             'huggingface.co': URLCategory.HUGGINGFACE,
             'www.huggingface.co': URLCategory.HUGGINGFACE,
+            'kaggle.com': URLCategory.KAGGLE,
+            'www.kaggle.com': URLCategory.KAGGLE,
         }
     
     def validate_url(self, url_string: str) -> bool:
@@ -83,6 +85,9 @@ class URLHandler:
         elif 'huggingface' in hostname_lower:
             logger.debug("classify_hostname: pattern matched huggingface for %s", hostname)
             return URLCategory.HUGGINGFACE
+        elif 'kaggle' in hostname_lower:
+            logger.debug("classify_hostname: pattern matched kaggle for %s", hostname)
+            return URLCategory.KAGGLE
         
         return URLCategory.UNKNOWN
     
@@ -174,6 +179,37 @@ class URLHandler:
         
         return {'unique_identifier': None, 'owner': None, 'repository': None, 'package_name': None}
     
+    def extract_kaggle_identifier(self, parsed_url) -> Dict[str, Optional[str]]:
+        path_parts = [part for part in parsed_url.path.split('/') if part]
+        
+        # Handle Kaggle URL patterns
+        # Examples: /datasets/username/dataset-name, /competitions/competition-name
+        if len(path_parts) >= 2:
+            if path_parts[0] == 'datasets' and len(path_parts) >= 3:
+                # /datasets/username/dataset-name
+                owner = path_parts[1]
+                dataset_name = path_parts[2]
+                unique_id = f"{owner}/{dataset_name}"
+                logger.debug("extract_kaggle_identifier: extracted %s from %s", unique_id, parsed_url.path)
+                return {
+                    'unique_identifier': unique_id,
+                    'owner': owner,
+                    'repository': dataset_name,
+                    'package_name': dataset_name
+                }
+            elif path_parts[0] == 'competitions':
+                # /competitions/competition-name
+                competition_name = path_parts[1]
+                logger.debug("extract_kaggle_identifier: extracted competition %s from %s", competition_name, parsed_url.path)
+                return {
+                    'unique_identifier': competition_name,
+                    'owner': None,
+                    'repository': competition_name,
+                    'package_name': competition_name
+                }
+        
+        return {'unique_identifier': None, 'owner': None, 'repository': None, 'package_name': None}
+    
     def extract_unique_identifier(self, parsed_url, category: URLCategory) -> Dict[str, Optional[str]]:
         if category == URLCategory.GITHUB:
             return self.extract_github_identifier(parsed_url)
@@ -181,6 +217,8 @@ class URLHandler:
             return self.extract_npm_identifier(parsed_url)
         elif category == URLCategory.HUGGINGFACE:
             return self.extract_huggingface_identifier(parsed_url)
+        elif category == URLCategory.KAGGLE:
+            return self.extract_kaggle_identifier(parsed_url)
         else:
             return {'unique_identifier': None}
     

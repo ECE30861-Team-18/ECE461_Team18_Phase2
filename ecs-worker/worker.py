@@ -38,8 +38,20 @@ def get_db_connection():
 def parse_hf_identifier(url: str):
     parsed = urlparse(url)
     parts = [p for p in parsed.path.split("/") if p]
+    # Handle /datasets/name, /spaces/name, or /owner/model patterns
     if len(parts) >= 2:
-        return f"{parts[0]}/{parts[1]}"
+        if parts[0] in ['datasets', 'spaces']:
+            # /datasets/name or /datasets/owner/name
+            if len(parts) >= 3:
+                return f"{parts[1]}/{parts[2]}"
+            else:
+                return parts[1]
+        else:
+            # /owner/model
+            return f"{parts[0]}/{parts[1]}"
+    elif len(parts) == 1:
+        # Single-part path like /model-name
+        return parts[0]
     return None
 
 

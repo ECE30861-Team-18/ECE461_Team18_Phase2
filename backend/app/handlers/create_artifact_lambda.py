@@ -228,8 +228,9 @@ def lambda_handler(event, context):
         metadata_json = json.dumps(metadata_dict)
 
         # --------------------------
-        # 6. Insert as upload_pending
+        # 6. Insert as upload_pending with download_url
         # --------------------------
+        # First get the artifact_id, then construct download_url
         result = run_query(
             """
             INSERT INTO artifacts (type, name, source_url, net_score, ratings, status, metadata)
@@ -252,6 +253,17 @@ def lambda_handler(event, context):
 
         # Generate proper S3 HTTPS URL immediately
         download_url = f"https://{S3_BUCKET}.s3.us-east-1.amazonaws.com/{artifact_type}/{artifact_id}/"
+        
+        # Update the artifact with download_url
+        run_query(
+            """
+            UPDATE artifacts
+            SET download_url = %s
+            WHERE id = %s;
+            """,
+            (download_url, artifact_id),
+            fetch=False
+        )
 
         # --------------------------
         # 6b. Create lineage relationship if provided

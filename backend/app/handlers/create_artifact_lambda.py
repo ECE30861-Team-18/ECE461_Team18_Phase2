@@ -250,7 +250,8 @@ def lambda_handler(event, context):
 
         artifact_id = result[0]['id']
 
-        download_url = f"s3://{S3_BUCKET}/{artifact_type}/{artifact_id}/"
+        # Generate proper S3 HTTPS URL immediately
+        download_url = f"https://{S3_BUCKET}.s3.us-east-1.amazonaws.com/{artifact_type}/{artifact_id}/"
 
         # --------------------------
         # 6b. Create lineage relationship if provided

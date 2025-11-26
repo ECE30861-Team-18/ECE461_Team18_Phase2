@@ -123,20 +123,22 @@ while True:
         conn = get_db_connection()
         cur = conn.cursor()
 
-        s3_prefix = f"{artifact_type}/{artifact_id}/"
+        # Generate proper S3 HTTPS URL (region-specific)
+        # Format: https://<bucket>.s3.<region>.amazonaws.com/<key>
+        s3_https_url = f"https://{S3_BUCKET}.s3.us-east-1.amazonaws.com/{artifact_type}/{artifact_id}/"
 
         cur.execute("""
             UPDATE artifacts
             SET status = 'available',
                 download_url = %s
             WHERE id = %s;
-        """, (s3_prefix, artifact_id))
+        """, (s3_https_url, artifact_id))
 
         conn.commit()
         cur.close()
         conn.close()
 
-        print(f"DB updated: artifact {artifact_id} is now AVAILABLE.")
+        print(f"DB updated: artifact {artifact_id} is now AVAILABLE at {s3_https_url}.")
 
     except Exception as e:
         print("Error during ingestion:", e)

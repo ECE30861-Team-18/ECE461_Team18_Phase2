@@ -1,4 +1,5 @@
 import json
+import re
 from rds_connection import run_query
 import traceback  # <<< LOGGING
 
@@ -64,11 +65,33 @@ def lambda_handler(event, context):
     artifact_type = path_params.get("artifact_type")
     artifact_id = path_params.get("id")
 
+    # Validate required parameters are present
     if not artifact_type or not artifact_id:
         response = {
             "statusCode": 400,
             "headers": {"Content-Type": "application/json"},
             "body": json.dumps({"error": "Missing artifact_type or id in path"})
+        }
+        log_response(response)  # <<< LOGGING
+        return response
+    
+    # Validate artifact_type is valid (model, dataset, code)
+    valid_types = ["model", "dataset", "code"]
+    if artifact_type not in valid_types:
+        response = {
+            "statusCode": 400,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({"error": f"Invalid artifact_type. Must be one of: {', '.join(valid_types)}"})
+        }
+        log_response(response)  # <<< LOGGING
+        return response
+    
+    # Validate artifact_id format (alphanumeric and hyphens only per spec)
+    if not re.match(r'^[a-zA-Z0-9\-]+$', artifact_id):
+        response = {
+            "statusCode": 400,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({"error": "Invalid artifact_id format. Must contain only alphanumeric characters and hyphens."})
         }
         log_response(response)  # <<< LOGGING
         return response

@@ -1,5 +1,6 @@
 import json
 from rds_connection import run_query
+import traceback  # <<< LOGGING
 
 
 def _deserialize_json_fields(record, fields=("metadata", "ratings")):
@@ -12,9 +13,51 @@ def _deserialize_json_fields(record, fields=("metadata", "ratings")):
                 continue
 
 
+# -----------------------------
+# LOGGING HELPERS
+# -----------------------------
+def log_event(event, context):  # <<< LOGGING
+    print("==== INCOMING EVENT ====")
+    try:
+        print(json.dumps(event, indent=2))
+    except:
+        print(event)
+
+    print("==== CONTEXT ====")
+    try:
+        print(json.dumps({
+            "aws_request_id": context.aws_request_id,
+            "function_name": context.function_name,
+            "memory_limit_in_mb": context.memory_limit_in_mb,
+            "function_version": context.function_version
+        }, indent=2))
+    except:
+        pass
+
+
+def log_response(response):  # <<< LOGGING
+    print("==== OUTGOING RESPONSE ====")
+    try:
+        print(json.dumps(response, indent=2))
+    except:
+        print(response)
+
+
+def log_exception(e):  # <<< LOGGING
+    print("==== EXCEPTION OCCURRED ====")
+    print(str(e))
+    traceback.print_exc()
+
+
+# -----------------------------
+# Lambda Handler
+# -----------------------------
 def lambda_handler(event, context):
+
+    log_event(event, context)  # <<< LOGGING
+
     token = event["headers"].get("x-authorization")
-    print("Incoming event:", json.dumps(event, indent=2))
+    print("Incoming event:", json.dumps(event, indent=2))  # (your original log)
 
     # --- Extract parameters ---
     path_params = event.get("pathParameters") or {}
@@ -22,11 +65,13 @@ def lambda_handler(event, context):
     artifact_id = path_params.get("id")
 
     if not artifact_type or not artifact_id:
-        return {
+        response = {
             "statusCode": 400,
             "headers": {"Content-Type": "application/json"},
             "body": json.dumps({"error": "Missing artifact_type or id in path"})
         }
+        log_response(response)  # <<< LOGGING
+        return response
 
     try:
         sql = """
@@ -37,11 +82,13 @@ def lambda_handler(event, context):
         results = run_query(sql, (artifact_id, artifact_type), fetch=True)
 
         if not results:
-            return {
+            response = {
                 "statusCode": 404,
                 "headers": {"Content-Type": "application/json"},
                 "body": json.dumps({"message": "Artifact not found"})
             }
+            log_response(response)  # <<< LOGGING
+            return response
 
         artifact = results[0]
         _deserialize_json_fields(artifact)
@@ -59,16 +106,23 @@ def lambda_handler(event, context):
             }
         }
 
-        return {
+        response = {
             "statusCode": 200,
             "headers": {"Content-Type": "application/json"},
             "body": json.dumps(response_body, default=str)
         }
 
+        log_response(response)  # <<< LOGGING
+        return response
+
     except Exception as e:
         print("❌ Error fetching artifact:", e)
-        return {
+        log_exception(e)  # <<< LOGGING
+
+        response = {
             "statusCode": 500,
             "headers": {"Content-Type": "application/json"},
             "body": json.dumps({"error": str(e)})
         }
+        log_response(response)  # <<< LOGGING
+        return response

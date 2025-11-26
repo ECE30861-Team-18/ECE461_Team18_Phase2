@@ -100,10 +100,11 @@ def lambda_handler(event, context):
         try:
             artifact_id = int(artifact_id)
         except (ValueError, TypeError):
+            print(f"[LICENSE_CHECK] Invalid artifact ID format: {artifact_id}")
             response = {
-                "statusCode": 400,
+                "statusCode": 404,
                 "headers": {"Content-Type": "application/json"},
-                "body": json.dumps({"error": "The license check request is malformed or references an unsupported usage context."})
+                "body": json.dumps({"error": "The artifact or GitHub project could not be found."})
             }
             log_response(response)  # <<< LOGGING
             return response

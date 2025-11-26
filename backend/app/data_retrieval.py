@@ -310,6 +310,49 @@ class HuggingFaceAPIClient:
             "User-Agent": "ECE461-Package-Analyzer"
         })
     
+    def _extract_license_from_readme(self, readme: str) -> Optional[str]:
+        """
+        Extract license from YAML frontmatter in README.
+        Looks for a block like:
+        ---
+        license: apache-2.0
+        ---
+        """
+        if not readme:
+            return None
+        
+        try:
+            # Check if README starts with YAML frontmatter (---)
+            if not readme.strip().startswith('---'):
+                return None
+            
+            # Find the closing --- of the frontmatter
+            lines = readme.split('\n')
+            frontmatter_end = -1
+            for i in range(1, len(lines)):
+                if lines[i].strip() == '---':
+                    frontmatter_end = i
+                    break
+            
+            if frontmatter_end == -1:
+                return None
+            
+            # Parse the frontmatter lines
+            frontmatter = '\n'.join(lines[1:frontmatter_end])
+            
+            # Look for license field
+            import re
+            license_match = re.search(r'^license:\s*(.+)$', frontmatter, re.MULTILINE | re.IGNORECASE)
+            if license_match:
+                license_value = license_match.group(1).strip()
+                logger.debug("HuggingFaceAPIClient: extracted license from README: %s", license_value)
+                return license_value
+            
+            return None
+        except Exception as e:
+            logger.exception("HuggingFaceAPIClient: error extracting license from README")
+            return None
+    
     def get_model_data(self, identifier: str) -> RepositoryData:
         try:
             # Try to get model information first
@@ -363,6 +406,10 @@ class HuggingFaceAPIClient:
                 logger.exception("HuggingFaceAPIClient: failed to fetch README for %s", identifier)
                 readme = None
 
+            # Extract license from README frontmatter if available
+            extracted_license = self._extract_license_from_readme(readme) if readme else None
+            final_license = extracted_license or model_data.get('license')
+
             return RepositoryData(
                 platform="huggingface",
                 identifier=identifier,
@@ -372,7 +419,7 @@ class HuggingFaceAPIClient:
                 created_at=created_at,
                 updated_at=updated_at,
                 language=model_data.get('pipeline_tag'),  # Using pipeline_tag as language equivalent
-                license=model_data.get('license'),
+                license=final_license,
                 repository_url=f"https://huggingface.co/{identifier}",
                 success=True,
                 readme=readme,

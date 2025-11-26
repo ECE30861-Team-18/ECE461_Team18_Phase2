@@ -23,6 +23,11 @@ def lambda_handler(event, context):
         body = json.loads(event.get("body", "{}"))
         url = body.get("url")
         provided_name = body.get("name")
+        
+        # NEW: Accept optional relationship info
+        related_model_id = body.get("related_model_id")  # For datasets/code that belong to a model
+        relationship_type = body.get("relationship_type")  # e.g., "training_dataset", "evaluation_code", "fine_tuning_dataset"
+        
         artifact_type = event.get("pathParameters", {}).get("artifact_type")
         
 
@@ -207,6 +212,50 @@ def lambda_handler(event, context):
 
         # ⭐ SPEC: construct download_url for ArtifactData ⭐
         download_url = f"s3://{S3_BUCKET}/{artifact_type}/{artifact_id}/"
+
+        # --------------------------
+        # 6b. Create lineage relationship if provided
+        # --------------------------
+        if related_model_id and relationship_type:
+            # Validate that the related model exists
+            check_model = run_query(
+                "SELECT id, type FROM artifacts WHERE id = %s;",
+                (related_model_id,),
+                fetch=True
+            )
+            
+            if check_model:
+                # Determine relationship direction based on artifact type
+                if artifact_type in ("dataset", "code"):
+                    # Dataset/code -> model (they contribute to the model)
+                    from_id = artifact_id
+                    to_id = related_model_id
+                elif artifact_type == "model":
+                    # Model -> related artifact (model depends on it)
+                    from_id = related_model_id
+                    to_id = artifact_id
+                else:
+                    from_id = artifact_id
+                    to_id = related_model_id
+                
+                # Insert relationship into artifact_relationships table
+                run_query(
+                    """
+                    INSERT INTO artifact_relationships (from_artifact_id, to_artifact_id, relationship_type, source)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (from_artifact_id, to_artifact_id, relationship_type) DO NOTHING;
+                    """,
+                    (from_id, to_id, relationship_type, "user_provided"),
+                    fetch=False
+                )
+                
+                # Also store relationship in metadata for backward compatibility
+                metadata_dict["related_artifacts"] = metadata_dict.get("related_artifacts", [])
+                metadata_dict["related_artifacts"].append({
+                    "artifact_id": related_model_id,
+                    "relationship": relationship_type,
+                    "direction": "to" if artifact_type in ("dataset", "code") else "from"
+                })
 
         # --------------------------
         # 7. Send SQS message to ECS ingest worker

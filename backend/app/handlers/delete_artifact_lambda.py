@@ -27,8 +27,19 @@ def lambda_handler(event, context):
 
     # --- Run delete query ---
     try:
+        # Try to convert artifact_id to integer for DB query
+        # If it fails, the ID is valid per spec regex but doesn't exist in our DB → 404
+        try:
+            artifact_id_int = int(artifact_id)
+        except ValueError:
+            return {
+                "statusCode": 404,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({"message": "Artifact not found"})
+            }
+        
         sql = "DELETE FROM artifacts WHERE id = %s AND type = %s RETURNING id;"
-        result = run_query(sql, (artifact_id, artifact_type), fetch=True)
+        result = run_query(sql, (artifact_id_int, artifact_type), fetch=True)
 
         if not result:
             return {

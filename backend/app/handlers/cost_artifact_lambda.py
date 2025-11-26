@@ -44,13 +44,14 @@ def lambda_handler(event, context):
             }
         
         # Convert artifact_id to integer
+        # If it fails, the ID is valid per spec regex but doesn't exist in our DB → 404
         try:
             artifact_id_int = int(artifact_id)
         except (ValueError, TypeError):
             return {
-                'statusCode': 400,
+                'statusCode': 404,
                 'headers': {'Content-Type': 'application/json'},
-                'body': json.dumps({'error': 'Invalid artifact ID format'})
+                'body': json.dumps({'error': 'Artifact does not exist'})
             }
         
         # Extract query parameters

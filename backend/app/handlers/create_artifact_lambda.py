@@ -1,6 +1,7 @@
 import json
 import os
 import boto3
+import traceback   # <<< LOGGING
 
 from auth import require_auth
 from metric_calculator import MetricCalculator
@@ -15,9 +16,46 @@ S3_BUCKET = os.environ.get("S3_BUCKET")
 sqs_client = boto3.client("sqs")
 
 # -----------------------------
+# LOGGING HELPERS
+# -----------------------------
+def log_event(event, context):  # <<< LOGGING
+    print("==== INCOMING EVENT ====")
+    try:
+        print(json.dumps(event, indent=2))
+    except:
+        print(event)
+
+    print("==== CONTEXT ====")
+    try:
+        print(json.dumps({
+            "aws_request_id": context.aws_request_id,
+            "function_name": context.function_name,
+            "memory_limit_in_mb": context.memory_limit_in_mb,
+            "function_version": context.function_version
+        }, indent=2))
+    except:
+        pass
+
+def log_response(response):  # <<< LOGGING
+    print("==== OUTGOING RESPONSE ====")
+    try:
+        print(json.dumps(response, indent=2))
+    except:
+        print(response)
+
+def log_exception(e):  # <<< LOGGING
+    print("==== EXCEPTION OCCURRED ====")
+    print(str(e))
+    traceback.print_exc()
+
+
+# -----------------------------
 # Lambda Handler
 # -----------------------------
 def lambda_handler(event, context):
+
+    log_event(event, context)  # <<< LOGGING
+
     try:
         token = event["headers"].get("x-authorization")
         body = json.loads(event.get("body", "{}"))
@@ -35,10 +73,12 @@ def lambda_handler(event, context):
         # 2. Validate request
         # --------------------------
         if not url or not artifact_type:
-            return {
+            response = {
                 "statusCode": 400,
                 "body": json.dumps({"error": "Missing URL or artifact_type"})
             }
+            log_response(response)  # <<< LOGGING
+            return response
 
         # Use URLHandler to extract identifier
         url_handler_temp = URLHandler()
@@ -47,45 +87,57 @@ def lambda_handler(event, context):
         
         # >>> MINIMAL CHANGE: type-aware URL validation <<<
         if not identifier:
-            return {
+            response = {
                 "statusCode": 400,
                 "body": json.dumps({"error": "Invalid URL"})
             }
+            log_response(response)  # <<< LOGGING
+            return response
 
         # Allow clients to override the derived identifier with a friendly name
         if provided_name is not None:
             if not isinstance(provided_name, str) or not provided_name.strip():
-                return {
+                response = {
                     "statusCode": 400,
                     "body": json.dumps({"error": "Invalid name"})
                 }
+                log_response(response)  # <<< LOGGING
+                return response
             artifact_name = provided_name.strip()
         else:
             artifact_name = identifier
 
         if artifact_type == "model":
             if parsed_data.category != URLCategory.HUGGINGFACE:
-                return {
+                response = {
                     "statusCode": 400,
                     "body": json.dumps({"error": "Model must use a Hugging Face URL"})
                 }
+                log_response(response)  # <<< LOGGING
+                return response
         elif artifact_type == "dataset":
             if parsed_data.category != URLCategory.HUGGINGFACE:
-                return {
+                response = {
                     "statusCode": 400,
                     "body": json.dumps({"error": "Dataset must use a Hugging Face URL"})
                 }
+                log_response(response)  # <<< LOGGING
+                return response
         elif artifact_type == "code":
             if parsed_data.category != URLCategory.GITHUB:
-                return {
+                response = {
                     "statusCode": 400,
                     "body": json.dumps({"error": "Code artifacts must use a GitHub URL"})
                 }
+                log_response(response)  # <<< LOGGING
+                return response
         else:
-            return {
+            response = {
                 "statusCode": 400,
                 "body": json.dumps({"error": "Invalid artifact_type"})
             }
+            log_response(response)  # <<< LOGGING
+            return response
 
         # --------------------------
         # 3. Duplicate check (using source_url)
@@ -97,13 +149,15 @@ def lambda_handler(event, context):
         )
 
         if check_result:
-            return {
+            response = {
                 "statusCode": 409,
                 "body": json.dumps({
                     "error": "Artifact already exists",
                     "id": check_result[0]['id']
                 })
             }
+            log_response(response)  # <<< LOGGING
+            return response
 
         # --------------------------
         # 4. RATING PIPELINE
@@ -115,30 +169,33 @@ def lambda_handler(event, context):
         )
         calc = MetricCalculator()
 
-        # Let URLHandler build a proper URLData instance
         model_obj: URLData = url_handler.handle_url(url)
 
-        # >>> MINIMAL CHANGE: type-aware validity check, keep ratings as-is <<<
         if not model_obj.is_valid:
-            return {
+            response = {
                 "statusCode": 400,
                 "body": json.dumps({"error": "URL is not valid"})
             }
+            log_response(response)  # <<< LOGGING
+            return response
 
         if artifact_type in ("model", "dataset"):
             if model_obj.category != URLCategory.HUGGINGFACE:
-                return {
+                response = {
                     "statusCode": 400,
                     "body": json.dumps({"error": "URL is not a valid Hugging Face URL"})
                 }
+                log_response(response)  # <<< LOGGING
+                return response
         elif artifact_type == "code":
             if model_obj.category != URLCategory.GITHUB:
-                return {
+                response = {
                     "statusCode": 400,
                     "body": json.dumps({"error": "URL is not a valid GitHub URL"})
                 }
+                log_response(response)  # <<< LOGGING
+                return response
 
-        # get metadata from HF repo (README, config, tags, etc)
         repo_data = data_retriever.retrieve_data(model_obj)
 
         model_dict = {
@@ -149,43 +206,13 @@ def lambda_handler(event, context):
         rating = calc.calculate_all_metrics(model_dict, category="MODEL")
         net_score = rating["net_score"]
 
-        # ### --------------------------
-        # ### 5. Reject if disqualified
-        # ### --------------------------
-        # if net_score < 0.5:
-        #     result = run_query(
-        #         """
-        #         INSERT INTO artifacts (type, name, source_url, net_score, ratings, status)
-        #         VALUES (%s, %s, %s, %s, %s, %s)
-        #         RETURNING id;
-        #         """,
-        #         (artifact_type, identifier, url, net_score, json.dumps(rating), "disqualified"),
-        #         fetch=True
-        #     )
-
-        #     artifact_id = result[0]['id']
-
-        #     return {
-        #         "statusCode": 424,  # FAILED_DEPENDENCY
-        #         "body": json.dumps({
-        #             "error": "Artifact disqualified by rating",
-        #             "net_score": net_score,
-        #             "id": artifact_id
-        #         })
-        #     }
-
-        # ---------------------------------------------------------
-        # >>> METADATA ADD — serialize HuggingFace metadata
-        # ---------------------------------------------------------
         metadata_dict = repo_data.__dict__.copy()
         metadata_dict["requested_name"] = artifact_name
-        # Convert datetime objects to ISO format strings
         if metadata_dict.get('created_at'):
             metadata_dict['created_at'] = metadata_dict['created_at'].isoformat()
         if metadata_dict.get('updated_at'):
             metadata_dict['updated_at'] = metadata_dict['updated_at'].isoformat()
         metadata_json = json.dumps(metadata_dict)
-        # ---------------------------------------------------------
 
         # --------------------------
         # 6. Insert as upload_pending
@@ -203,21 +230,19 @@ def lambda_handler(event, context):
                 net_score,
                 json.dumps(rating),
                 "upload_pending",
-                metadata_json        # <<< METADATA ADD
+                metadata_json
             ),
             fetch=True
         )
 
         artifact_id = result[0]['id']
 
-        # ⭐ SPEC: construct download_url for ArtifactData ⭐
         download_url = f"s3://{S3_BUCKET}/{artifact_type}/{artifact_id}/"
 
         # --------------------------
         # 6b. Create lineage relationship if provided
         # --------------------------
         if related_model_id and relationship_type:
-            # Validate that the related model exists
             check_model = run_query(
                 "SELECT id, type FROM artifacts WHERE id = %s;",
                 (related_model_id,),
@@ -225,20 +250,16 @@ def lambda_handler(event, context):
             )
             
             if check_model:
-                # Determine relationship direction based on artifact type
                 if artifact_type in ("dataset", "code"):
-                    # Dataset/code -> model (they contribute to the model)
                     from_id = artifact_id
                     to_id = related_model_id
                 elif artifact_type == "model":
-                    # Model -> related artifact (model depends on it)
                     from_id = related_model_id
                     to_id = artifact_id
                 else:
                     from_id = artifact_id
                     to_id = related_model_id
                 
-                # Insert relationship into artifact_relationships table
                 run_query(
                     """
                     INSERT INTO artifact_relationships (from_artifact_id, to_artifact_id, relationship_type, source)
@@ -248,8 +269,7 @@ def lambda_handler(event, context):
                     (from_id, to_id, relationship_type, "user_provided"),
                     fetch=False
                 )
-                
-                # Also store relationship in metadata for backward compatibility
+
                 metadata_dict["related_artifacts"] = metadata_dict.get("related_artifacts", [])
                 metadata_dict["related_artifacts"].append({
                     "artifact_id": related_model_id,
@@ -273,7 +293,7 @@ def lambda_handler(event, context):
         # --------------------------
         # 8. SUCCESS (201)
         # --------------------------
-        return {
+        response = {
             "statusCode": 201,
             "body": json.dumps({
                 "metadata": {
@@ -283,13 +303,19 @@ def lambda_handler(event, context):
                 },
                 "data": {
                     "url": url,
-                    "download_url": download_url   # ⭐ SPEC: include download_url in ArtifactData
+                    "download_url": download_url
                 }
             })
         }
 
+        log_response(response)  # <<< LOGGING
+        return response
+
     except Exception as e:
-        return {
+        log_exception(e)  # <<< LOGGING
+        response = {
             "statusCode": 500,
             "body": json.dumps({"error": str(e)})
         }
+        log_response(response)  # <<< LOGGING
+        return response

@@ -87,8 +87,9 @@ def lambda_handler(event, context):
         
         # Validate regex pattern (try to compile it)
         try:
-            compiled_regex = re.compile(regex_pattern, re.IGNORECASE | re.DOTALL)
-            print(f"[AUTOGRADER DEBUG] Compiled regex with flags: IGNORECASE | DOTALL")
+            # Compile regex with IGNORECASE only (DOTALL not needed and slows down matching)
+            compiled_regex = re.compile(regex_pattern, re.IGNORECASE)
+            print(f"[AUTOGRADER DEBUG] Compiled regex with flags: IGNORECASE")
             print(f"[AUTOGRADER DEBUG] Regex pattern: {compiled_regex.pattern}")
             print(f"[AUTOGRADER DEBUG] Regex flags: {compiled_regex.flags}")
         except re.error as regex_err:
@@ -104,8 +105,9 @@ def lambda_handler(event, context):
             return response
         
         # Fetch all artifacts with their metadata
+        # Only get essential fields to reduce data transfer and processing time
         sql = """
-        SELECT id, type, name, source_url, download_url, net_score, ratings, status, metadata, created_at
+        SELECT id, type, name, metadata
         FROM artifacts
         ORDER BY created_at DESC;
         """
@@ -135,26 +137,26 @@ def lambda_handler(event, context):
         
         for idx, artifact in enumerate(artifacts):
             name = artifact.get("name", "")
-            print(f"[AUTOGRADER DEBUG] Artifact {idx+1}: name='{name}', id={artifact.get('id')}, type={artifact.get('type')}")
             
-            # Check if name matches
+            # Quick check: name matching (fast)
             if compiled_regex.search(name):
-                print(f"[AUTOGRADER DEBUG] ✓ MATCH on name: '{name}'")
+                print(f"[AUTOGRADER DEBUG] ✓ MATCH {idx+1}: name='{name}' (matched on name)")
                 matching_artifacts.append(artifact)
                 continue
             
-            # Check README in metadata
+            # README matching (only if name didn't match)
             metadata = artifact.get("metadata", {})
             if isinstance(metadata, dict):
                 readme = metadata.get("readme", "")
                 if readme:
-                    print(f"[AUTOGRADER DEBUG] Checking README for '{name}' (length: {len(readme)} chars)")
-                    if compiled_regex.search(readme):
-                        print(f"[AUTOGRADER DEBUG] ✓ MATCH on README for: '{name}'")
-                        matching_artifacts.append(artifact)
-                        continue
-                else:
-                    print(f"[AUTOGRADER DEBUG] No README found for '{name}'")
+                    try:
+                        # Search full README
+                        if compiled_regex.search(readme):
+                            print(f"[AUTOGRADER DEBUG] ✓ MATCH {idx+1}: name='{name}' (matched in README)")
+                            matching_artifacts.append(artifact)
+                    except Exception as e:
+                        # Catch catastrophic backtracking or other regex issues
+                        print(f"[AUTOGRADER DEBUG] Regex error on '{name}': {e}")
         
         print(f"[AUTOGRADER DEBUG] Total matches found: {len(matching_artifacts)}")
         

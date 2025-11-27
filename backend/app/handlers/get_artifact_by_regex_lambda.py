@@ -110,7 +110,9 @@ def lambda_handler(event, context):
         ORDER BY created_at DESC;
         """
         
+        print(f"[AUTOGRADER DEBUG] Executing query to fetch all artifacts...")
         artifacts = run_query(sql, fetch=True)
+        print(f"[AUTOGRADER DEBUG] Query returned {len(artifacts) if artifacts else 0} artifacts")
         
         if not artifacts:
             response = {
@@ -129,11 +131,15 @@ def lambda_handler(event, context):
         # Filter artifacts
         matching_artifacts = []
         
-        for artifact in artifacts:
+        print(f"[AUTOGRADER DEBUG] Starting to filter {len(artifacts)} artifacts against pattern '{regex_pattern}'")
+        
+        for idx, artifact in enumerate(artifacts):
             name = artifact.get("name", "")
+            print(f"[AUTOGRADER DEBUG] Artifact {idx+1}: name='{name}', id={artifact.get('id')}, type={artifact.get('type')}")
             
             # Check if name matches
             if compiled_regex.search(name):
+                print(f"[AUTOGRADER DEBUG] ✓ MATCH on name: '{name}'")
                 matching_artifacts.append(artifact)
                 continue
             
@@ -141,9 +147,16 @@ def lambda_handler(event, context):
             metadata = artifact.get("metadata", {})
             if isinstance(metadata, dict):
                 readme = metadata.get("readme", "")
-                if readme and compiled_regex.search(readme):
-                    matching_artifacts.append(artifact)
-                    continue
+                if readme:
+                    print(f"[AUTOGRADER DEBUG] Checking README for '{name}' (length: {len(readme)} chars)")
+                    if compiled_regex.search(readme):
+                        print(f"[AUTOGRADER DEBUG] ✓ MATCH on README for: '{name}'")
+                        matching_artifacts.append(artifact)
+                        continue
+                else:
+                    print(f"[AUTOGRADER DEBUG] No README found for '{name}'")
+        
+        print(f"[AUTOGRADER DEBUG] Total matches found: {len(matching_artifacts)}")
         
         # Return 404 if no matches found
         if not matching_artifacts:

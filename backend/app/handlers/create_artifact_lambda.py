@@ -275,8 +275,10 @@ def lambda_handler(event, context):
         raw_config = metadata_dict.get("config")
         try:
             config = json.loads(raw_config) if raw_config else {}
+            print("[AUTOGRADER DEBUG] Parsed config JSON for artifact", config)
         except json.JSONDecodeError:
             config = {}
+            print("[AUTOGRADER DEBUG] Failed to parse config JSON for artifact")
 
         # Helper: insert relationship into DB (if parent exists)
         def add_auto_rel(parent_name, relationship_type):
@@ -289,8 +291,8 @@ def lambda_handler(event, context):
                 (parent_name,),
                 fetch=True
             )
-
-            if parent_query:
+            print(f"[AUTOGRADER DEBUG] add_auto_rel parent query:", parent_query)
+            if parent_query and parent_query[0]:
                 parent_id = parent_query[0]["id"]
                 from_id = parent_id
                 to_id = artifact_id

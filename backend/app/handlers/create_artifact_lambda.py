@@ -266,6 +266,94 @@ def lambda_handler(event, context):
         )
 
         # --------------------------
+        # 6a. Auto-extract HF lineage from config.json (if present)
+        # --------------------------
+
+        auto_relationships = []
+
+        # Load config.json (stringified JSON)
+        raw_config = metadata_dict.get("config")
+        try:
+            config = json.loads(raw_config) if raw_config else {}
+        except json.JSONDecodeError:
+            config = {}
+
+        # Helper: insert relationship into DB (if parent exists)
+        def add_auto_rel(parent_name, relationship_type):
+            if not parent_name or not isinstance(parent_name, str):
+                return
+
+            # Try to find parent artifact in DB by name
+            parent_query = run_query(
+                "SELECT id FROM artifacts WHERE name = %s;",
+                (parent_name,),
+                fetch=True
+            )
+
+            if parent_query:
+                parent_id = parent_query[0]["id"]
+                from_id = parent_id
+                to_id = artifact_id
+
+                # Insert into artifact_relationships table
+                run_query(
+                    """
+                    INSERT INTO artifact_relationships
+                    (from_artifact_id, to_artifact_id, relationship_type, source)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT DO NOTHING;
+                    """,
+                    (from_id, to_id, relationship_type, "config_json"),
+                    fetch=False
+                )
+
+                # Save into metadata for debugging / lineage lambda
+                auto_relationships.append({
+                    "artifact_id": parent_id,
+                    "relationship": relationship_type,
+                    "direction": "from"
+                })
+
+            else:
+                # Parent isn't an artifact we know — save placeholder
+                auto_relationships.append({
+                    "artifact_id": parent_name,
+                    "relationship": relationship_type,
+                    "direction": "from",
+                    "placeholder": True
+                })
+
+        # ---- RULE 1: PEFT / LoRA / Adapter ----
+        if "base_model_name_or_path" in config:
+            add_auto_rel(config["base_model_name_or_path"], "base_model")
+
+        # ---- RULE 2: Fine-tuned / derived checkpoint ----
+        # Note: Avoid self-referential loops
+        if "_name_or_path" in config:
+            val = config["_name_or_path"]
+            if isinstance(val, str) and val != artifact_name:
+                add_auto_rel(val, "derived_from")
+
+        # ---- RULE 3: finetuned_from ----
+        if "finetuned_from" in config:
+            add_auto_rel(config["finetuned_from"], "fine_tuned_from")
+
+        # ---- RULE 4: Distillation teacher ----
+        if "teacher" in config:
+            add_auto_rel(config["teacher"], "teacher_model")
+
+        # ---- RULE 5: PEFT type (LoRA, prefix-tuning, etc.) ----
+        if "peft_type" in config:
+            base = config.get("base_model_name_or_path")
+            peft_type = config["peft_type"].lower()
+            if base:
+                add_auto_rel(base, peft_type)
+
+        # Save auto lineage entries into metadata
+        if auto_relationships:
+            metadata_dict["auto_lineage"] = auto_relationships
+
+        # --------------------------
         # 6b. Create lineage relationship if provided
         # --------------------------
         if related_model_id and relationship_type:

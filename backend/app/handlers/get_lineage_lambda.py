@@ -15,10 +15,21 @@ def lambda_handler(event, context):
         artifact_id = path_params.get("id")
 
         if not artifact_id:
+            print("artifact_id missing")
             return {
                 "statusCode": 400,
                 "headers": {"Content-Type": "application/json"},
                 "body": json.dumps({"error": "Missing artifact_id"})
+            }
+
+        try:
+            artifact_id = int(artifact_id)
+        except ValueError:
+            print("invalid artifact_id")
+            return {
+                "statusCode": 400,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({"error": "Invalid artifact_id"})
             }
 
         # Validate the artifact exists
@@ -29,6 +40,7 @@ def lambda_handler(event, context):
         )
 
         if not artifact:
+            print("artifact not found")
             return {
                 "statusCode": 404,
                 "headers": {"Content-Type": "application/json"},
@@ -155,6 +167,8 @@ def lambda_handler(event, context):
             "nodes": list(nodes.values()),
             "edges": edges
         }
+
+        print("returning lineage graph:", response_graph)
 
         return {
             "statusCode": 200,

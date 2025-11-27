@@ -16,36 +16,36 @@ def _deserialize_json_fields(record, fields=("metadata", "ratings")):
 
 
 # -----------------------------
-# SAFE REGEX COMPILER
+# SAFE REGEX VALIDATOR
 # -----------------------------
-def compile_safe_regex(pattern: str):
+class DangerousRegexError(ValueError):
+    """Raised when a potentially dangerous regex pattern is detected."""
+    pass
+
+
+def validate_safe_regex(pattern: str):
     """
-    Compile a regex safely.
-    If the pattern contains nested quantifiers or other catastrophic constructs,
-    fall back to escaping the pattern (treating it as a literal search).
+    Validate that a regex pattern is safe to execute.
+    Raises DangerousRegexError if dangerous patterns are detected.
+    Raises re.error if the pattern is invalid.
     """
 
     DANGEROUS_PATTERNS = [
         r"\(\s*\.\*\s*\)\+",       # (.*)+
+        r"\(\s*\.\+\s*\)\+",       # (.+)+
         r"\(\s*\w\+\s*\)\+",       # (a+)+
         r"\(\s*.+\|\s*.+\)\*",     # (a|aa)* or similar ambiguous alternations
         r"\{\s*\d+\s*,\s*100000",  # absurd {m,100000} ranges
         r"\{\s*\d+\s*,\s*\d{5,}",  # any extremely large repetition ranges
     ]
 
-    # Detect and block catastrophic constructs
+    # Detect and reject catastrophic constructs
     for dp in DANGEROUS_PATTERNS:
         if re.search(dp, pattern):
-            safe = re.escape(pattern)
-            return re.compile(safe, re.IGNORECASE), True
+            raise DangerousRegexError("potentially catastrophic backtracking detected")
 
-    # Try to compile normally
-    try:
-        return re.compile(pattern, re.IGNORECASE), False
-    except re.error:
-        # Invalid regex → fallback to escaped literal
-        safe = re.escape(pattern)
-        return re.compile(safe, re.IGNORECASE), True
+    # Try to compile to validate syntax
+    return re.compile(pattern, re.IGNORECASE)
 
 
 # -----------------------------
@@ -117,12 +117,23 @@ def lambda_handler(event, context):
             log_response(response)
             return response
 
-        # Validate regex pattern (try to compile it)
+        # Validate and compile regex pattern
         try:
-            compiled_regex = re.compile(regex_pattern, re.IGNORECASE)
+            compiled_regex = validate_safe_regex(regex_pattern)
             print(f"[AUTOGRADER DEBUG] Compiled regex with flags: IGNORECASE")
             print(f"[AUTOGRADER DEBUG] Regex pattern: {compiled_regex.pattern}")
             print(f"[AUTOGRADER DEBUG] Regex flags: {compiled_regex.flags}")
+        except DangerousRegexError as danger_err:
+            response = {
+                "statusCode": 400,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({
+                    "error": f"Invalid regex pattern: {str(danger_err)}"
+                })
+            }
+            print(f"[AUTOGRADER DEBUG] Dangerous regex rejected, returning 400")
+            log_response(response)
+            return response
         except re.error as regex_err:
             response = {
                 "statusCode": 400,

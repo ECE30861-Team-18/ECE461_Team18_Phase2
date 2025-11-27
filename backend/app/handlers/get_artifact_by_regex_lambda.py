@@ -117,10 +117,23 @@ def lambda_handler(event, context):
             log_response(response)
             return response
 
-        # SAFE REGEX COMPILE
-        compiled_regex, escaped = compile_safe_regex(regex_pattern)
-        print(f"[AUTOGRADER DEBUG] Safe regex compiled. Escaped={escaped}")
-        print(f"[AUTOGRADER DEBUG] Final regex used: {compiled_regex.pattern}")
+        # Validate regex pattern (try to compile it)
+        try:
+            compiled_regex = re.compile(regex_pattern, re.IGNORECASE)
+            print(f"[AUTOGRADER DEBUG] Compiled regex with flags: IGNORECASE")
+            print(f"[AUTOGRADER DEBUG] Regex pattern: {compiled_regex.pattern}")
+            print(f"[AUTOGRADER DEBUG] Regex flags: {compiled_regex.flags}")
+        except re.error as regex_err:
+            response = {
+                "statusCode": 400,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({
+                    "error": f"Invalid regex pattern: {str(regex_err)}"
+                })
+            }
+            print(f"[AUTOGRADER DEBUG] Returning 400 response: {json.dumps(response)}")
+            log_response(response)
+            return response
 
         # Fetch artifacts
         sql = """

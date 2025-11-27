@@ -88,6 +88,9 @@ def lambda_handler(event, context):
         # Validate regex pattern (try to compile it)
         try:
             compiled_regex = re.compile(regex_pattern, re.IGNORECASE | re.DOTALL)
+            print(f"[AUTOGRADER DEBUG] Compiled regex with flags: IGNORECASE | DOTALL")
+            print(f"[AUTOGRADER DEBUG] Regex pattern: {compiled_regex.pattern}")
+            print(f"[AUTOGRADER DEBUG] Regex flags: {compiled_regex.flags}")
         except re.error as regex_err:
             response = {
                 "statusCode": 400,

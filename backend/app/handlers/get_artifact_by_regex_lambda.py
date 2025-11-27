@@ -63,7 +63,7 @@ def log_event(event, context):  # <<< LOGGING
         print(json.dumps({
             "aws_request_id": context.aws_request_id,
             "function_name": context.function_name,
-            "memory_limit_in_mb": context.memorymemory_limit_in_mb,
+            "memory_limit_in_mb": context.memory_limit_in_mb,
             "function_version": context.function_version
         }, indent=2))
     except:

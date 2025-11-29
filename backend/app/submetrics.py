@@ -5,7 +5,6 @@ import re
 import time
 import json
 import requests
-import logging
 from datetime import datetime, timezone
 from typing import * 
 from metric import Metric
@@ -22,32 +21,8 @@ except Exception:
     # python-dotenv not installed; tests should still run without env overrides
     pass
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-try:
-    os.makedirs('logs', exist_ok=True)
-    LOG_FILE = os.path.join('logs', 'submetrics.log')
-    if not any(isinstance(h, logging.FileHandler) and getattr(h, 'baseFilename', None) == os.path.abspath(LOG_FILE) for h in logger.handlers):
-        fh = logging.FileHandler(LOG_FILE, mode='w', encoding='utf-8')
-        fh.setLevel(logging.INFO)
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-        fh.setFormatter(formatter)
-        logger.addHandler(fh)
-except Exception:
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    sh = logging.StreamHandler()
-    sh.setLevel(logging.INFO)
-    sh.setFormatter(formatter)
-    if not any(isinstance(h, logging.StreamHandler) for h in logger.handlers):
-        logger.addHandler(sh)
-finally:
-    logger.propagate = False
-
-logger.info("submetrics initialized; logging to %s", LOG_FILE)
-
 # Read Gen AI Studio API key safely (may be missing). Do not raise on missing key.
 GEN_AI_STUDIO_API_KEY = os.environ.get('GEN_AI_STUDIO_API_KEY')
-logger.debug("submetrics: GEN_AI_STUDIO_API_KEY present=%s", bool(GEN_AI_STUDIO_API_KEY))
 
 
 class SizeMetric(Metric):
@@ -74,7 +49,6 @@ class SizeMetric(Metric):
         #     "desktop_pc": 0.8,        # 80% of 16GB = ~12.8GB usable  
         #     "aws_server": 0.9         # 90% of 64GB = ~57.6GB usable
         # }
-        logger.info("SizeMetric metric successfully initialized")
     
     def calculate_metric(self, model_info: Dict[str, Any]) -> Dict[str, float]:
         """Calculate size scores for each hardware type"""
@@ -83,7 +57,6 @@ class SizeMetric(Metric):
         try:
             # Parse model size from data (expecting JSON with model info)
             model_size_gb = self._get_model_size(model_info)
-            logger.info(f"SizeMetric: Detected model size: {model_size_gb:.3f} GB")
             
             scores: Dict[str, float] = {}
             for hardware, limit_gb in self.hardware_limits.items():
@@ -97,7 +70,6 @@ class SizeMetric(Metric):
             return scores
             
         except Exception as e:
-            logger.error(f"Error calculating SizeMetric: {e}")
             self._latency = int((time.time() - start_time) * 1000)
             # Return minimum scores on error
             return {hw: 0.0 for hw in self.hardware_limits.keys()}
@@ -189,7 +161,6 @@ class LicenseMetric(Metric):
         self.problematic_licenses = {
             "gpl", "gpl-3.0", "agpl", "cc-by-nc", "proprietary"
         }
-        logger.info("LicenseMetric metric successfully initialized")
     
     def calculate_metric(self, model_info: Dict[str, Any]) -> float:
         start_time = time.time()
@@ -202,7 +173,6 @@ class LicenseMetric(Metric):
             return score
             
         except Exception as e:
-            logger.error(f"Error calculating LicenseMetric: {e}")
             self._latency = int((time.time() - start_time) * 1000)
             return 0.0
     
@@ -260,7 +230,6 @@ class RampUpMetric(Metric):
         super().__init__()
         self.name = "ramp_up_time"
         self.weight = 0.125
-        logger.info("RampUpMetric metric successfully initialized")
     
     def calculate_metric(self, model_info: Dict[str, Any]) -> float:
         start_time = time.time()
@@ -285,7 +254,6 @@ class RampUpMetric(Metric):
             return min(1.0, score)
             
         except Exception as e:
-            logger.error(f"Error calculating RampUpMetric: {e}")
             self._latency = int((time.time() - start_time) * 1000)
             return 0.0
     
@@ -347,7 +315,6 @@ class BusFactorMetric(Metric):
         super().__init__()
         self.name = "bus_factor"
         self.weight = 0.125
-        logger.info("BusFactorMetric metric successfully initialized")
     
     def calculate_metric(self, model_info: Dict[str, Any]) -> float:
         start_time = time.time()
@@ -371,7 +338,6 @@ class BusFactorMetric(Metric):
             return min(1.0, score)
             
         except Exception as e:
-            logger.error(f"Error calculating BusFactorMetric: {e}")
             self._latency = int((time.time() - start_time) * 1000)
             return 0.0
     
@@ -452,7 +418,6 @@ class AvailableScoreMetric(Metric):
         super().__init__()
         self.name = "dataset_and_code_score"
         self.weight = 0.125
-        logger.info("AvailableScoreMetric metric successfully initialized")
     
     def calculate_metric(self, model_info: Dict[str, Any]) -> float:
         start_time = time.time()
@@ -472,7 +437,6 @@ class AvailableScoreMetric(Metric):
             return min(1.0, score)
             
         except Exception as e:
-            logger.error(f"Error calculating AvailableScoreMetric: {e}")
             self._latency = int((time.time() - start_time) * 1000)
             return 0.0
     
@@ -553,7 +517,6 @@ class DatasetQualityMetric(Metric):
         super().__init__()
         self.name = "dataset_quality"  
         self.weight = 0.125
-        logger.info("DatasetQualityMetric metric successfully initialized")
     
     def calculate_metric(self, model_info: Dict[str, Any]) -> float:
         start_time = time.time()
@@ -570,7 +533,6 @@ class DatasetQualityMetric(Metric):
             return score
             
         except Exception as e:
-            logger.error(f"Error calculating DatasetQualityMetric: {e}")
             self._latency = int((time.time() - start_time) * 1000)
             return 0.0
     
@@ -607,7 +569,6 @@ class CodeQualityMetric(Metric):
         super().__init__()
         self.name = "code_quality"
         self.weight = 0.125
-        logger.info("CodeQualityMetric metric successfully initialized")
     
     def calculate_metric(self, model_info: Dict[str, Any]) -> float:
         start_time = time.time()
@@ -624,7 +585,6 @@ class CodeQualityMetric(Metric):
             return score
             
         except Exception as e:
-            logger.error(f"Error calculating CodeQualityMetric: {e}")
             self._latency = int((time.time() - start_time) * 1000)
             return 0.0
     
@@ -702,7 +662,6 @@ class PerformanceMetric(Metric):
         self.name: str = "performance_claims"
         self.weight: float = 0.125
         self.system_prompt: str = self.get_system_prompt()
-        logger.info("PerformanceMetric metric successfully initialized")
 
     def get_system_prompt(self) -> str:
         return """
@@ -738,7 +697,6 @@ OUTPUT REQUIREMENTS:
             return score
             
         except Exception as e:
-            logger.error(f"Error calculating PerformanceMetric: {e}")
             self._latency = int((time.time() - start_time) * 1000)
             return 0.0
         
@@ -749,7 +707,8 @@ OUTPUT REQUIREMENTS:
         if GEN_AI_STUDIO_API_KEY:
             headers["Authorization"] = f"Bearer {GEN_AI_STUDIO_API_KEY}"
         else:
-            logger.debug("Gen AI Studio API key not present; skipping authenticated header")
+            pass  # Gen AI Studio API key not present; skipping authenticated header
+        
         body = {
             "model": "llama4:latest",
             "messages": [
@@ -770,12 +729,10 @@ OUTPUT REQUIREMENTS:
             if resp.status_code != 200:
                 text = getattr(resp, 'text', '<no response body>')
                 raise requests.exceptions.RequestException(f"API returned status code {resp.status_code}: {text}")
-            logger.info("Successful GenAI Studio API response")
 
             try:
                 resp_json = resp.json()
             except Exception as e:
-                logger.error(f"Failed to parse JSON from Gen AI Studio response: {e}")
                 resp_json = None
 
             try:
@@ -789,14 +746,11 @@ OUTPUT REQUIREMENTS:
                 match = re.match(r'^\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)(?:\n|\\n)', content)
                 score: float = float(match.group(1)) if match else 0.0 
 
-                logger.info(f"Successfully received performance score: {score}")
                 return clamp(score, 0.0, 1.0)
             
             except Exception as e:
-                logger.error(f"Could not extract score from Gen AI Studio response: {e}; resp_json: {resp_json}")
                 return 0.0
         except Exception as e:
-            logger.error(f"Error calling Gen AI Studio API: {e}")
             return 0.0
 
     
@@ -825,7 +779,6 @@ class ReproducibilityMetric(Metric):
         self.name = "reproducibility"
         self.weight = 0.125
         self.debug_info: List[Dict[str, Any]] = []
-        logger.info("ReproducibilityMetric initialized.")
 
     # ---------------------------------------------------------
     # Main evaluation entry point
@@ -833,38 +786,31 @@ class ReproducibilityMetric(Metric):
     def calculate_metric(self, model_info: Dict[str, Any]) -> float:
         start_time = time.time()
         self.debug_info.clear()
-        logger.info("Starting reproducibility evaluation...")
 
         if isinstance(model_info, str):
             model_info = json.loads(model_info)
 
         readme = model_info.get("readme", "").strip()
         if not readme:
-            logger.warning("No README content found. Returning score 0.0.")
             self._latency = int((time.time() - start_time) * 1000)
             return 0.0
 
         snippets = self._extract_code_snippets(readme)
-        logger.info(f"Detected {len(snippets)} code snippet(s).")
 
         if not snippets:
-            logger.warning("No executable snippets detected. Returning 0.0.")
             self._latency = int((time.time() - start_time) * 1000)
             return 0.0
 
         best_score = 0.0
         for i, snippet in enumerate(snippets, start=1):
-            logger.info(f"Evaluating snippet #{i} ({len(snippet.splitlines())} lines)")
             score = self._evaluate_snippet(snippet, i)
             self.debug_info.append({"index": i, "score": score, "code": snippet})
             best_score = max(best_score, score)
 
             if best_score == 1.0:
-                logger.info("Perfect snippet found; stopping further evaluation.")
                 break
 
         self._latency = int((time.time() - start_time) * 1000)
-        logger.info(f"Reproducibility score = {best_score}, latency = {self._latency} ms")
         return best_score
 
     # ---------------------------------------------------------
@@ -882,8 +828,8 @@ class ReproducibilityMetric(Metric):
             code = textwrap.dedent(code).strip()
             if lang in ["python", "py"]:
                 snippets.append(code)
-            else: # we will only accept python snippets for security reasons
-                logger.debug(f"Skipping non-Python snippet in language '{lang}'")
+            else:
+                pass  # Skipping non-Python snippet
 
         return snippets
 
@@ -899,7 +845,6 @@ class ReproducibilityMetric(Metric):
         ]
         for pattern in unsafe_patterns:
             if re.search(pattern, snippet):
-                logger.warning(f"Unsafe pattern '{pattern}' in snippet #{index}; skipped.")
                 return 0.0
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -916,7 +861,6 @@ class ReproducibilityMetric(Metric):
                 "KMP_DUPLICATE_LIB_OK": "TRUE"  # prevents OMP duplicate errors
             }
 
-            logger.debug(f"Executing snippet #{index} at {snippet_path}")
             try:
                 result = subprocess.run(
                     [sys.executable, snippet_path],
@@ -930,9 +874,9 @@ class ReproducibilityMetric(Metric):
 
                 stdout, stderr = result.stdout.strip(), result.stderr.strip()
                 if stdout:
-                    logger.debug(f"Snippet #{index} output:\n{stdout}")
+                    pass  # Snippet output present
                 if stderr:
-                    logger.debug(f"Snippet #{index} stderr:\n{stderr}")
+                    pass  # Snippet stderr present
 
                 if result.returncode == 0:
                     return 1.0  # success
@@ -948,7 +892,6 @@ class ReproducibilityMetric(Metric):
                 return 0.0
 
             except subprocess.TimeoutExpired:
-                logger.warning(f"Snippet #{index} timed out (10s); score = 0.5")
                 return 0.5
 
     # ---------------------------------------------------------
@@ -966,14 +909,12 @@ class ReviewedenessMetric(Metric):
         self.name = "reviewedeness"
         self.weight = 0.05
         self._latency = 0
-        logger.info("ReviewedenessMetric successfully initialized")
 
     def calculate_metric(self, model_info: Dict[str, Any]) -> float:
         start_time = time.time()
         try:
             repo_url = model_info.get("github_repo", "")
             if not repo_url:
-                logger.warning("No GitHub repo found in model info")
                 return -1.0  # per the spec, -1 if no repo linked
 
             reviewed_fraction = self._get_reviewed_fraction(repo_url)
@@ -981,7 +922,6 @@ class ReviewedenessMetric(Metric):
             return clamp(reviewed_fraction, 0.0, 1.0)
 
         except Exception as e:
-            logger.error(f"Error calculating ReviewedenessMetric: {e}")
             self._latency = int((time.time() - start_time) * 1000)
             return 0.0
 
@@ -996,7 +936,6 @@ class ReviewedenessMetric(Metric):
         if token:
             headers["Authorization"] = f"Bearer {token}"
         else:
-            logger.warning("GitHub token missing; GraphQL call may fail.")
             return 0.0
 
         # Extract owner/repo from URL
@@ -1035,7 +974,6 @@ class ReviewedenessMetric(Metric):
             return fraction
 
         except Exception as e:
-            logger.error(f"GraphQL query failed for {repo_url}: {e}")
             self._latency = int((time.time() - start_time) * 1000)
             return 0.0
 

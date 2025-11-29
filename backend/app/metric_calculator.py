@@ -3,23 +3,8 @@ import time
 import json
 from typing import * 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import logging
 from metric import Metric
 from submetrics import *
-
-os.makedirs('logs', exist_ok=True)
-LOG_FILE = os.path.join('logs', 'metric_calculator.log')
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-if not any(isinstance(h, logging.FileHandler) and getattr(h, 'baseFilename', None) == os.path.abspath(LOG_FILE) for h in logger.handlers):
-    fh = logging.FileHandler(LOG_FILE, mode='w', encoding='utf-8')
-    fh.setLevel(logging.INFO)
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    fh.setFormatter(formatter)
-    logger.addHandler(fh)
-logger.propagate = False
-
-logger.info("metric_calculator initialized; logging to %s", LOG_FILE)
 
 class MetricCalculator:
     """
@@ -44,7 +29,6 @@ class MetricCalculator:
         
         # Configure weights based on Sarah's priorities from spec
         self._configure_weights()
-        logger.info("Metrics initialized with submetrics and weights")
     
     def _configure_weights(self) -> None:
         """Configure metric weights based on Sarah's stated priorities."""
@@ -139,8 +123,7 @@ class MetricCalculator:
                 try:
                     score, latency = future.result(timeout=30)  # 30 second timeout per metric
                     results[metric] = (score, latency)
-                except Exception as e:
-                    logger.warning(f"Metric {metric.name} failed: {e}")
+                except Exception:
                     results[metric] = (0.0, 0)  # Default values on failure
         
         return results
@@ -172,8 +155,7 @@ class MetricCalculator:
             
             return score, latency
             
-        except Exception as e:
-            logger.error(f"Error calculating {metric.name}: {e}")
+        except Exception:
             return 0.0, 0
     
     def get_metric_weights(self) -> Dict[str, float]:

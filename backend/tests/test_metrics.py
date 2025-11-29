@@ -49,6 +49,15 @@ def sample_model_data_dict():
         
         ## Usage
         This model can be used for text generation tasks.
+
+        ```python
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+tokenizer = AutoTokenizer.from_pretrained("model-name")
+model = AutoModelForCausalLM.from_pretrained("model-name")
+inputs = tokenizer("Hello, my name is", return_tensors="pt")
+outputs = model.generate(**inputs)
+print(tokenizer.decode(outputs[0]))
+        ```
         
         ## Training Data
         Trained on a curated dataset of high-quality text.
@@ -103,7 +112,7 @@ def test_metric_calculator_malformed_json():
 
 @pytest.mark.parametrize("cls", [
     SizeMetric, LicenseMetric, RampUpMetric, BusFactorMetric,
-    AvailableScoreMetric, DatasetQualityMetric, CodeQualityMetric, PerformanceMetric,
+    AvailableScoreMetric, DatasetQualityMetric, CodeQualityMetric, PerformanceMetric, ReproducibilityMetric,
 ])
 def test_submetrics_basic_contract(cls):
     """Test that submetric classes implement calculate_metric and calculate_latency with expected returns."""
@@ -171,6 +180,67 @@ def test_all_submetric_edge_cases():
     pm = PerformanceMetric()
     pscore = pm.calculate_metric({"readme": "Value 0.99"})
     assert 0.0 <= pscore <= 1.0
+
+    # ReproducibilityMetric: no README, no siblings
+    rm = ReproducibilityMetric()
+    rpscore = rm.calculate_metric({})
+    assert 0.0 <= rpscore <= 1.0
+
+    # ReproducibilityMetric: README with code that tries to run os commands
+    readme_with_os_code = """
+    Here is some example code:
+    ```python
+    import os
+    os.system('rm -rf /')  # dangerous command
+    ```
+    More text.
+    """
+    rpscore2 = rm.calculate_metric({"readme": readme_with_os_code})
+    assert rpscore2 == 0.0  # should not allow dangerous code to run
+
+    # reproducibility with no code snippets
+    readme_no_code = "This is a README without any code snippets."
+    rpscore3 = rm.calculate_metric({"readme": readme_no_code})
+    assert rpscore3 == 0.0
+
+    # reproducibility with non-python code snippets
+    readme_non_python_code = """
+    Here is some example code:
+    ```bash
+    echo "Hello, World!"
+    ```
+    More text.
+    """
+    rpscore4 = rm.calculate_metric({"readme": readme_non_python_code})
+    assert rpscore4 == 0.0
+
+
+    # reproducibility with python code that runs too long
+    readme_long_code = """
+    Here is some example code:
+    ```python
+    while True:
+        pass  # infinite loop
+    ```
+    More text.
+    """
+    rpscore5 = rm.calculate_metric({"readme": readme_long_code})
+    assert rpscore5 == 0.5
+
+    # reproducibility with python code that throws specific exception
+    readme_error_code ="""
+    Here is some example code with an exception:
+    ```python
+    def do_work():
+    raise ValueError("This is a deliberate exception")
+    
+do_work()
+    ```
+    More text.
+    """
+    rpscore6 = rm.calculate_metric({"readme": readme_error_code})
+    assert rpscore6 == 0.0
+
 
     logger.info('Finished test_all_submetric_edge_cases')
 

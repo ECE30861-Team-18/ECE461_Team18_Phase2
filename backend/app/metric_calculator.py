@@ -7,10 +7,19 @@ import logging
 from metric import Metric
 from submetrics import *
 
+os.makedirs('logs', exist_ok=True)
+LOG_FILE = os.path.join('logs', 'metric_calculator.log')
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+if not any(isinstance(h, logging.FileHandler) and getattr(h, 'baseFilename', None) == os.path.abspath(LOG_FILE) for h in logger.handlers):
+    fh = logging.FileHandler(LOG_FILE, mode='w', encoding='utf-8')
+    fh.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    fh.setFormatter(formatter)
+    logger.addHandler(fh)
+logger.propagate = False
 
-logger.info("metric_calculator initialized")
+logger.info("metric_calculator initialized; logging to %s", LOG_FILE)
 
 class MetricCalculator:
     """
@@ -28,7 +37,9 @@ class MetricCalculator:
             AvailableScoreMetric(),
             DatasetQualityMetric(),
             CodeQualityMetric(),
-            PerformanceMetric()
+            PerformanceMetric(),
+            ReviewedenessMetric(),
+            ReproducibilityMetric(),
         ]
         
         # Configure weights based on Sarah's priorities from spec
@@ -44,9 +55,11 @@ class MetricCalculator:
             "dataset_and_code_score": 0.15,  # High priority - documentation
             "performance_claims": 0.15, # High priority - evidence of quality
             "bus_factor": 0.10,        # Medium priority - maintainability
-            "code_quality": 0.10,      # Medium priority - code standards
-            "dataset_quality": 0.10,   # Medium priority - data quality
-            "size_score": 0.05        # Lower priority - deployment consideration
+            "code_quality": 0.05,      # Medium priority - code standards
+            "dataset_quality": 0.05,   # Medium priority - data quality
+            "size_score": 0.05,        # Lower priority - deployment consideration
+            "reviewedeness": 0.05,     # Lower priority "FOR NOW"
+            "reproducibility": 0.05    # Lower priority "FOR NOW"
         }
         
         for metric in self.metrics:

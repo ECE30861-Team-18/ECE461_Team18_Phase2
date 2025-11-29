@@ -9,6 +9,11 @@ import logging
 from datetime import datetime, timezone
 from typing import * 
 from metric import Metric
+import subprocess
+import tempfile
+import sys
+import textwrap
+
 try:
     from dotenv import load_dotenv # pyright: ignore[reportMissingImports]
     # Load .env and allow .env to override empty env vars set by the `run` script
@@ -18,9 +23,27 @@ except Exception:
     pass
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
+try:
+    os.makedirs('logs', exist_ok=True)
+    LOG_FILE = os.path.join('logs', 'submetrics.log')
+    if not any(isinstance(h, logging.FileHandler) and getattr(h, 'baseFilename', None) == os.path.abspath(LOG_FILE) for h in logger.handlers):
+        fh = logging.FileHandler(LOG_FILE, mode='w', encoding='utf-8')
+        fh.setLevel(logging.INFO)
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        fh.setFormatter(formatter)
+        logger.addHandler(fh)
+except Exception:
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    sh = logging.StreamHandler()
+    sh.setLevel(logging.INFO)
+    sh.setFormatter(formatter)
+    if not any(isinstance(h, logging.StreamHandler) for h in logger.handlers):
+        logger.addHandler(sh)
+finally:
+    logger.propagate = False
 
-logger.info("submetrics initialized")
+logger.info("submetrics initialized; logging to %s", LOG_FILE)
 
 # Read Gen AI Studio API key safely (may be missing). Do not raise on missing key.
 GEN_AI_STUDIO_API_KEY = os.environ.get('GEN_AI_STUDIO_API_KEY')
@@ -68,6 +91,7 @@ class SizeMetric(Metric):
                 
                 usage = limit_gb / model_size_gb
                 scores[hardware] = usage if usage <= 1.0 else 1.0
+
 
             self._latency = int((time.time() - start_time) * 1000)
             return scores
@@ -780,6 +804,246 @@ OUTPUT REQUIREMENTS:
     def calculate_latency(self) -> int:
         return getattr(self, '_latency', 0)
     
+    
+class ReproducibilityMetric(Metric):
+    """
+    Evaluates the reproducibility of model code snippets found in a README.
+
+    Scoring:
+        - 0.0 → No code or code does not run at all
+        - 0.5 → Code fails due to minor, fixable issues (e.g., missing imports)
+        - 1.0 → Code runs successfully without modification
+
+    Implementation notes:
+        • Extracts fenced code blocks (```python```).
+        • Executes snippets safely in an isolated subprocess.
+        • Logs detailed steps for traceability.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.name = "reproducibility"
+        self.weight = 0.125
+        self.debug_info: List[Dict[str, Any]] = []
+        logger.info("ReproducibilityMetric initialized.")
+
+    # ---------------------------------------------------------
+    # Main evaluation entry point
+    # ---------------------------------------------------------
+    def calculate_metric(self, model_info: Dict[str, Any]) -> float:
+        start_time = time.time()
+        self.debug_info.clear()
+        logger.info("Starting reproducibility evaluation...")
+
+        if isinstance(model_info, str):
+            model_info = json.loads(model_info)
+
+        readme = model_info.get("readme", "").strip()
+        if not readme:
+            logger.warning("No README content found. Returning score 0.0.")
+            self._latency = int((time.time() - start_time) * 1000)
+            return 0.0
+
+        snippets = self._extract_code_snippets(readme)
+        logger.info(f"Detected {len(snippets)} code snippet(s).")
+
+        if not snippets:
+            logger.warning("No executable snippets detected. Returning 0.0.")
+            self._latency = int((time.time() - start_time) * 1000)
+            return 0.0
+
+        best_score = 0.0
+        for i, snippet in enumerate(snippets, start=1):
+            logger.info(f"Evaluating snippet #{i} ({len(snippet.splitlines())} lines)")
+            score = self._evaluate_snippet(snippet, i)
+            self.debug_info.append({"index": i, "score": score, "code": snippet})
+            best_score = max(best_score, score)
+
+            if best_score == 1.0:
+                logger.info("Perfect snippet found; stopping further evaluation.")
+                break
+
+        self._latency = int((time.time() - start_time) * 1000)
+        logger.info(f"Reproducibility score = {best_score}, latency = {self._latency} ms")
+        return best_score
+
+    # ---------------------------------------------------------
+    # Helper: extract fenced code blocks
+    # ---------------------------------------------------------
+    def _extract_code_snippets(self, readme: str) -> List[str]:
+        """Extract runnable Python or bash-based snippets from README."""
+        pattern = re.compile(r'```(python|py|bash|sh)?\s*(.*?)```',
+                             re.DOTALL | re.IGNORECASE)
+        matches = pattern.findall(readme)
+        snippets = []
+
+        for lang, code in matches:
+            lang = (lang or "").lower()
+            code = textwrap.dedent(code).strip()
+            if lang in ["python", "py"]:
+                snippets.append(code)
+            else: # we will only accept python snippets for security reasons
+                logger.debug(f"Skipping non-Python snippet in language '{lang}'")
+
+        return snippets
+
+    # ---------------------------------------------------------
+    # Helper: execute and score snippet
+    # ---------------------------------------------------------
+    def _evaluate_snippet(self, snippet: str, index: int) -> float:
+        """Safely execute a snippet and return a score based on outcome."""
+        unsafe_patterns = [
+            r'\bos\.system\b', r'\bos\.popen\b', r'\bsubprocess\b',
+            r'\beval\b', r'\bexec\b', r'\bopen\b', r'\bsocket\b',
+            r'\bthreading\b', r'\bmultiprocessing\b'
+        ]
+        for pattern in unsafe_patterns:
+            if re.search(pattern, snippet):
+                logger.warning(f"Unsafe pattern '{pattern}' in snippet #{index}; skipped.")
+                return 0.0
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            snippet_path = os.path.join(tmpdir, f"snippet_{index}.py")
+
+            print(f"\n--- Snippet #{index} to be executed ---\n{snippet}\n--------------------------------------\n")
+
+            with open(snippet_path, "w", encoding="utf-8") as f:
+                f.write(snippet)
+
+            env = {
+                "PATH": os.environ.get("PATH", ""),
+                "PYTHONNOUSERSITE": "1",
+                "KMP_DUPLICATE_LIB_OK": "TRUE"  # prevents OMP duplicate errors
+            }
+
+            logger.debug(f"Executing snippet #{index} at {snippet_path}")
+            try:
+                result = subprocess.run(
+                    [sys.executable, snippet_path],
+                    cwd=tmpdir,
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    timeout=10,
+                    text=True
+                )
+
+                stdout, stderr = result.stdout.strip(), result.stderr.strip()
+                if stdout:
+                    logger.debug(f"Snippet #{index} output:\n{stdout}")
+                if stderr:
+                    logger.debug(f"Snippet #{index} stderr:\n{stderr}")
+
+                if result.returncode == 0:
+                    return 1.0  # success
+
+                # Check for fixable errors
+                stderr_lower = stderr.lower()
+                if any(err in stderr_lower for err in [
+                    "importerror", "modulenotfounderror", "filenotfounderror",
+                    "nameerror", "attributeerror"
+                ]):
+                    return 0.5
+
+                return 0.0
+
+            except subprocess.TimeoutExpired:
+                logger.warning(f"Snippet #{index} timed out (10s); score = 0.5")
+                return 0.5
+
+    # ---------------------------------------------------------
+    def calculate_latency(self) -> int:
+        """Return the measured latency in milliseconds."""
+        return getattr(self, "_latency", 0)
+
+
+
+class ReviewedenessMetric(Metric):
+    """Measures how much of the code was introduced via reviewed pull requests."""
+
+    def __init__(self):
+        super().__init__()
+        self.name = "reviewedeness"
+        self.weight = 0.05
+        self._latency = 0
+        logger.info("ReviewedenessMetric successfully initialized")
+
+    def calculate_metric(self, model_info: Dict[str, Any]) -> float:
+        start_time = time.time()
+        try:
+            repo_url = model_info.get("github_repo", "")
+            if not repo_url:
+                logger.warning("No GitHub repo found in model info")
+                return -1.0  # per the spec, -1 if no repo linked
+
+            reviewed_fraction = self._get_reviewed_fraction(repo_url)
+            self._latency = int((time.time() - start_time) * 1000)
+            return clamp(reviewed_fraction, 0.0, 1.0)
+
+        except Exception as e:
+            logger.error(f"Error calculating ReviewedenessMetric: {e}")
+            self._latency = int((time.time() - start_time) * 1000)
+            return 0.0
+
+    def _get_reviewed_fraction(self, repo_url: str) -> float:
+        """
+        Fetch merged PRs and their review counts using the GitHub GraphQL API.
+        Returns the fraction of merged PRs that had ≥1 review.
+        """
+        start_time = time.time()
+        headers = {"Accept": "application/vnd.github+json"}
+        token = os.getenv("TEAM18_GITHUB_TOKEN")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        else:
+            logger.warning("GitHub token missing; GraphQL call may fail.")
+            return 0.0
+
+        # Extract owner/repo from URL
+        m = re.search(r"github\.com/([^/]+)/([^/]+)", repo_url)
+        if not m:
+            return 0.0
+        owner, repo = m.group(1), m.group(2)
+
+        # GraphQL query: latest 20 merged PRs + review counts
+        query = f"""
+        {{
+        repository(owner: "{owner}", name: "{repo}") {{
+            pullRequests(first: 20, states: MERGED, orderBy: {{field: UPDATED_AT, direction: DESC}}) {{
+            nodes {{
+                number
+                reviews {{ totalCount }}
+            }}
+            }}
+        }}
+        }}
+        """
+        url = "https://api.github.com/graphql"
+        body = {"query": query}
+        try:
+            resp = requests.post(url, headers=headers, json=body, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+
+            prs = data.get("data", {}).get("repository", {}).get("pullRequests", {}).get("nodes", [])
+            if not prs:
+                return 0.0
+
+            reviewed = sum(1 for pr in prs if pr.get("reviews", {}).get("totalCount", 0) > 0)
+            fraction = reviewed / len(prs)
+            self._latency = int((time.time() - start_time) * 1000)
+            return fraction
+
+        except Exception as e:
+            logger.error(f"GraphQL query failed for {repo_url}: {e}")
+            self._latency = int((time.time() - start_time) * 1000)
+            return 0.0
+
+    def calculate_latency(self) -> int:
+        return getattr(self, "_latency", 0)
+
+
+
 def clamp(value: float, min_value: float = 0.0, max_value: float = 1.0) -> float:
     """
     Clip a float between min and max limits

@@ -3,8 +3,8 @@ import sys
 import json
 import pytest
 import logging
-import requests
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
+from io import BytesIO
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
@@ -36,55 +36,63 @@ def quiet_logging():
     # Keep the app logs quieter during tests but still allow our test logger to output
     logging.getLogger('app').setLevel(logging.WARNING)
 
-class DummyResp:
-    def __init__(self, status_code=200, json_obj=None, text=None, json_exc=None):
-        self.status_code = status_code
-        self._json = json_obj
-        self.text = text if text is not None else (json.dumps(json_obj) if json_obj is not None else '')
-        self._json_exc = json_exc
 
-    def json(self):
-        if self._json_exc:
-            raise self._json_exc
-        return self._json
-    
-    def raise_for_status(self):
-        # mimic requests.Response.raise_for_status behavior
-        if self.status_code >= 400:
-            raise requests.HTTPError(f"{self.status_code} Error")
-        return None
+def create_bedrock_response(content):
+    """Helper to create a mock Bedrock response"""
+    response_body = {
+        'content': [{'text': content}]
+    }
+    mock_response = {
+        'body': BytesIO(json.dumps(response_body).encode('utf-8'))
+    }
+    return mock_response
+
+
+def create_bedrock_client_mock(response=None, exception=None):
+    """Helper to create a mock Bedrock client"""
+    mock_client = MagicMock()
+    if exception:
+        mock_client.invoke_model.side_effect = exception
+    elif response:
+        mock_client.invoke_model.return_value = response
+    return mock_client
 
 
 def test_valid_response_parses_score():
     logger.info('Starting test_valid_response_parses_score')
     pm = PerformanceMetric()
 
-    resp_json = {'choices': [ {'message': {'content': '0.85\nExplanation here'}} ] }
+    bedrock_response = create_bedrock_response('0.85\nExplanation here')
+    mock_client = create_bedrock_client_mock(response=bedrock_response)
 
-    with patch('app.submetrics.requests.post', return_value=DummyResp(status_code=200, json_obj=resp_json)):
+    with patch('app.submetrics.boto3.client', return_value=mock_client):
         score = pm._evaluate_performance_in_readme('dummy readme')
         assert pytest.approx(score, rel=1e-3) == 0.85
     logger.info('Finished test_valid_response_parses_score')
 
 
-def test_non_200_response_returns_zero():
-    logger.info('Starting test_non_200_response_returns_zero')
+def test_bedrock_exception_returns_zero():
+    logger.info('Starting test_bedrock_exception_returns_zero')
     pm = PerformanceMetric()
 
-    resp_json = {'error': 'bad request'}
-    # status_code != 200 should cause method to return 0.0
-    with patch('app.submetrics.requests.post', return_value=DummyResp(status_code=500, json_obj=resp_json)):
+    # Simulate Bedrock API error
+    mock_client = create_bedrock_client_mock(exception=Exception('Bedrock API error'))
+
+    with patch('app.submetrics.boto3.client', return_value=mock_client):
         score = pm._evaluate_performance_in_readme('dummy readme')
         assert score == 0.0
-    logger.info('Finished test_non_200_response_returns_zero')
+    logger.info('Finished test_bedrock_exception_returns_zero')
 
 
 def test_malformed_json_returns_zero():
     logger.info('Starting test_malformed_json_returns_zero')
     pm = PerformanceMetric()
 
-    # Simulate json() raising a ValueError
-    with patch('app.submetrics.requests.post', return_value=DummyResp(status_code=200, json_exc=ValueError('no json'))):
+    # Simulate malformed JSON in Bedrock response body
+    mock_response = {'body': BytesIO(b'not valid json')}
+    mock_client = create_bedrock_client_mock(response=mock_response)
+
+    with patch('app.submetrics.boto3.client', return_value=mock_client):
         score = pm._evaluate_performance_in_readme('dummy readme')
         assert score == 0.0
     logger.info('Finished test_malformed_json_returns_zero')
@@ -94,9 +102,10 @@ def test_successful_content_response():
     logger.info('Starting test_successful_content_response')
     pm = PerformanceMetric()
 
-    resp_json = {'choices': [ { 'message': {'content': '0.72\nSome note'} } ] }
+    bedrock_response = create_bedrock_response('0.72\nSome note')
+    mock_client = create_bedrock_client_mock(response=bedrock_response)
 
-    with patch('app.submetrics.requests.post', return_value=DummyResp(status_code=200, json_obj=resp_json)):
+    with patch('app.submetrics.boto3.client', return_value=mock_client):
         score = pm._evaluate_performance_in_readme('dummy readme')
         assert pytest.approx(score, rel=1e-3) == 0.72
     logger.info('Finished test_successful_content_response')
@@ -106,32 +115,36 @@ def test_numeric_without_newline_returns_zero():
     logger.info('Starting test_numeric_without_newline_returns_zero')
     pm = PerformanceMetric()
     # content without newline: regex expects newline after number, so returns 0.0
-    resp_json = {'choices': [ {'message': {'content': '0.99'}} ] }
+    bedrock_response = create_bedrock_response('0.99')
+    mock_client = create_bedrock_client_mock(response=bedrock_response)
 
-    with patch('app.submetrics.requests.post', return_value=DummyResp(status_code=200, json_obj=resp_json)):
+    with patch('app.submetrics.boto3.client', return_value=mock_client):
         score = pm._evaluate_performance_in_readme('dummy readme')
         assert score == 0.0
     logger.info('Finished test_numeric_without_newline_returns_zero')
 
 
-def test_json_not_dict_returns_zero():
-    logger.info('Starting test_json_not_dict_returns_zero')
+def test_missing_content_field_returns_zero():
+    logger.info('Starting test_missing_content_field_returns_zero')
     pm = PerformanceMetric()
-    # resp.json returns a list (unexpected type)
-    with patch('app.submetrics.requests.post', return_value=DummyResp(status_code=200, json_obj=['not','a','dict'])):
+    # Bedrock response missing 'content' field
+    mock_response = {'body': BytesIO(json.dumps({'wrong_field': 'value'}).encode('utf-8'))}
+    mock_client = create_bedrock_client_mock(response=mock_response)
+
+    with patch('app.submetrics.boto3.client', return_value=mock_client):
         score = pm._evaluate_performance_in_readme('dummy readme')
         assert score == 0.0
-    logger.info('Finished test_json_not_dict_returns_zero')
+    logger.info('Finished test_missing_content_field_returns_zero')
 
 
-def test_raise_for_status_error_returns_zero():
-    logger.info('Starting test_raise_for_status_error_returns_zero')
+def test_client_initialization_error_returns_zero():
+    logger.info('Starting test_client_initialization_error_returns_zero')
     pm = PerformanceMetric()
-    # raise_for_status should raise and be caught leading to 0.0
-    with patch('app.submetrics.requests.post', return_value=DummyResp(status_code=502, json_obj={'error':'bad'})):
+    # Simulate error during boto3 client initialization
+    with patch('app.submetrics.boto3.client', side_effect=Exception('AWS credentials error')):
         score = pm._evaluate_performance_in_readme('dummy readme')
         assert score == 0.0
-    logger.info('Finished test_raise_for_status_error_returns_zero')
+    logger.info('Finished test_client_initialization_error_returns_zero')
 
 
 if __name__ == '__main__':

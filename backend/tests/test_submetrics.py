@@ -35,16 +35,17 @@ def test_license_metric_scores():
 
 
 def test_performance_metric_parsing_and_clamp(monkeypatch):
+    import json
+    from io import BytesIO
     pm = PerformanceMetric()
 
-    # Patch requests.post to return a fake response
-    fake_resp = MagicMock()
-    fake_resp.status_code = 200
-    fake_resp.json.return_value = {
-        'choices': [ {'message': {'content': '0.85\nAdditional text'}} ]
-    }
+    # Create mock Bedrock response
+    response_body = {'content': [{'text': '0.85\nAdditional text'}]}
+    mock_response = {'body': BytesIO(json.dumps(response_body).encode('utf-8'))}
+    mock_client = MagicMock()
+    mock_client.invoke_model.return_value = mock_response
 
-    with patch('submetrics.requests.post', return_value=fake_resp):
+    with patch('submetrics.boto3.client', return_value=mock_client):
         score = pm._evaluate_performance_in_readme('Some README with numbers')
         assert 0.84 < score < 0.86
 

@@ -123,11 +123,12 @@ For datasets, extract:
 2. Keywords that would identify the dataset (e.g., for "ImageNet" -> ["imagenet", "ilsvrc"])
 
 For code repositories:
-1. Full GitHub URLs (https://github.com/org/repo)
-2. Keywords from repository descriptions that would match artifact names (e.g., for ResNet paper -> ["resnet", "deep-residual-networks", "residual"])
-
-Be versatile - extract identifying terms that could appear in artifact names even if formatted differently.
-Don't include generic terms like "custom dataset" or "proprietary".
+1. Full GitHub URLs (https://github.com/org/repo) - if mentioned
+2. Keywords for associated code repositories
+   - Use SPECIFIC, UNIQUE terms (e.g., "deep-residual-networks", "kaiming-he", "google-bert")
+   - DO NOT use generic/common terms: "implementation", "code", "pytorch", "tensorflow", "training", "model", "network", "architecture"
+   - Prefer author names + model names, or unique repository identifiers
+   - Maximum 2-3 keywords per repo to keep them distinctive
 
 Return ONLY valid JSON (no markdown):
 {{
@@ -138,7 +139,7 @@ Return ONLY valid JSON (no markdown):
     {{"name": "exact name", "keywords": ["identifying", "terms"]}}
   ],
   "code_repos": [
-    {{"url": "https://github.com/org/repo", "keywords": ["repo", "terms"]}}
+    {{"url": "https://github.com/org/repo", "keywords": ["specific-unique-terms"]}}
   ]
 }}
 

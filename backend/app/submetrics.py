@@ -12,6 +12,7 @@ import subprocess
 import tempfile
 import sys
 import textwrap
+import boto3
 
 try:
     from dotenv import load_dotenv # pyright: ignore[reportMissingImports]
@@ -701,56 +702,46 @@ OUTPUT REQUIREMENTS:
             return 0.0
         
     def _evaluate_performance_in_readme(self, readme: str) -> float:
-        url = "https://genai.rcac.purdue.edu/api/chat/completions"
-        # Only include Authorization header when API key is present
-        headers = {"Content-Type": "application/json"}
-        if GEN_AI_STUDIO_API_KEY:
-            headers["Authorization"] = f"Bearer {GEN_AI_STUDIO_API_KEY}"
-        else:
-            pass  # Gen AI Studio API key not present; skipping authenticated header
-        
-        body = {
-            "model": "llama4:latest",
-            "messages": [
-                {"role": "system", "content": self.system_prompt},
-                {"role": "user", "content": readme}
-            ],
-            "response_format": {"type": "text"},
-        }
-        # If API key isn't present, we still can attempt the call but it will
-        # likely return 401; the surrounding code handles exceptions and will
-        # return 0.0 in that case. We log that the key is missing to aid
-        # diagnostics.
         try:
-            # time.sleep(1)
-            resp = requests.post(url, headers=headers, json=body, timeout=120)
-            resp.raise_for_status()
-
-            if resp.status_code != 200:
-                text = getattr(resp, 'text', '<no response body>')
-                raise requests.exceptions.RequestException(f"API returned status code {resp.status_code}: {text}")
-
-            try:
-                resp_json = resp.json()
-            except Exception as e:
-                resp_json = None
-
-            try:
-                if not resp_json or not isinstance(resp_json, dict):
-                    raise ValueError("Empty or unexpected JSON response")
-
-                # Typical structure: { 'choices': [ { 'message': { 'content': "0.85\n..." } } ] }
-                content: str = resp_json['choices'][0]['message']['content']
-                # score: float = float(content.split('\n', 1)[0].strip())
-                # Require a trailing newline or explicit \n after the number (per test expectations)
-                match = re.match(r'^\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)(?:\n|\\n)', content)
-                score: float = float(match.group(1)) if match else 0.0 
-
-                return clamp(score, 0.0, 1.0)
+            # Initialize AWS Bedrock Runtime client
+            bedrock_runtime = boto3.client(
+                service_name='bedrock-runtime',
+                region_name='us-east-1'
+            )
             
-            except Exception as e:
-                return 0.0
+            # Prepare the request body for Claude 3 Haiku
+            request_body = {
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 1024,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": f"{self.system_prompt}\n\n{readme}"
+                    }
+                ]
+            }
+            
+            # Invoke the model
+            response = bedrock_runtime.invoke_model(
+                modelId='anthropic.claude-3-haiku-20240307-v1:0',
+                body=json.dumps(request_body)
+            )
+            
+            # Parse the response
+            response_body = json.loads(response['body'].read())
+            
+            # Extract the content from Claude's response
+            content = response_body['content'][0]['text']
+            
+            # Parse the score from the first line
+            # Require a trailing newline or explicit \n after the number (per test expectations)
+            match = re.match(r'^\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)(?:\n|\\n)', content)
+            score: float = float(match.group(1)) if match else 0.0 
+
+            return clamp(score, 0.0, 1.0)
+            
         except Exception as e:
+            print(f"Error calling AWS Bedrock: {str(e)}")
             return 0.0
 
     

@@ -172,7 +172,7 @@ README:
         print(f"[DEPENDENCY] LLM extracted: {extracted}")
         
         # Normalize LLM output to include keywords
-        normalized = {
+        normalized: dict = {
             "training_datasets": [],
             "eval_datasets": [],
             "code_repos": []

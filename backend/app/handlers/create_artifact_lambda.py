@@ -14,6 +14,543 @@ from rds_connection import run_query
 
 S3_BUCKET = os.environ.get("S3_BUCKET")
 sqs_client = boto3.client("sqs")
+bedrock_client = boto3.client("bedrock-runtime", region_name="us-east-1")
+
+# -----------------------------
+# DATASET/CODE DEPENDENCY EXTRACTION (SEPARATE FROM LINEAGE)
+# -----------------------------
+def extract_frontmatter_datasets(readme: str) -> list:
+    """
+    Extract dataset names from YAML frontmatter at top of README.
+    Example:
+    ---
+    datasets:
+    - bookcorpus
+    - wikipedia
+    ---
+    """
+    import re
+    
+    # Match YAML frontmatter
+    frontmatter_match = re.match(r'^---\s*\n(.*?)\n---', readme, re.DOTALL)
+    if not frontmatter_match:
+        return []
+    
+    frontmatter = frontmatter_match.group(1)
+    datasets = []
+    
+    # Look for datasets: section
+    in_datasets = False
+    for line in frontmatter.split('\n'):
+        line = line.strip()
+        
+        if line.startswith('datasets:'):
+            in_datasets = True
+            continue
+        
+        if in_datasets:
+            # Check if still in list (starts with -)
+            if line.startswith('- '):
+                dataset_name = line[2:].strip()
+                if dataset_name:
+                    datasets.append(dataset_name)
+            elif line and not line.startswith('#'):
+                # Hit next section
+                in_datasets = False
+    
+    return datasets
+
+
+def extract_github_urls(readme: str) -> list:
+    """
+    Extract all GitHub repository URLs from README.
+    Handles markdown links like: [text](https://github.com/org/repo)
+    And plain URLs: https://github.com/org/repo
+    """
+    import re
+    
+    github_urls = set()
+    
+    # Pattern 1: Markdown links [text](https://github.com/...)
+    markdown_pattern = r'\[([^\]]+)\]\((https?://github\.com/[^\)]+)\)'
+    for match in re.finditer(markdown_pattern, readme):
+        github_urls.add(match.group(2))
+    
+    # Pattern 2: Plain URLs https://github.com/...
+    url_pattern = r'https?://github\.com/[\w\-]+/[\w\-\.]+'
+    for match in re.finditer(url_pattern, readme):
+        url = match.group(0)
+        # Clean up trailing punctuation
+        url = url.rstrip('.),;:')
+        github_urls.add(url)
+    
+    return list(github_urls)
+
+
+def extract_artifact_dependencies(readme: str) -> dict:
+    """
+    Extract dataset and code repo mentions from model README.
+    First tries YAML frontmatter and regex for GitHub URLs, then uses LLM for datasets.
+    """
+    if not readme or len(readme.strip()) < 50:
+        return {"training_datasets": [], "eval_datasets": [], "code_repos": []}
+    
+    # Step 1: Extract from frontmatter (most reliable)
+    frontmatter_datasets = extract_frontmatter_datasets(readme)
+    
+    # Step 2: Extract GitHub URLs directly (covers most cases like bert-base-uncased)
+    github_urls = extract_github_urls(readme)
+    
+    if frontmatter_datasets or github_urls:
+        print(f"[DEPENDENCY] Found datasets in frontmatter: {frontmatter_datasets}")
+        print(f"[DEPENDENCY] Found GitHub URLs: {github_urls}")
+        
+        # Convert to format with keywords
+        formatted_datasets = [{"name": ds, "keywords": [ds.lower()]} for ds in frontmatter_datasets]
+        formatted_repos = [{"url": url, "keywords": []} for url in github_urls]
+        
+        return {
+            "training_datasets": formatted_datasets,
+            "eval_datasets": [],
+            "code_repos": formatted_repos
+        }
+    
+    # Step 3: Use LLM for body content (fallback)
+    prompt = f"""Analyze this machine learning model README and extract information about datasets and code repositories.
+
+For datasets, extract:
+1. Exact dataset names mentioned (e.g., "ImageNet", "COCO", "SQuAD", "Flickr2K", "DIV2K")
+2. Keywords that would identify the dataset (e.g., for "ImageNet" -> ["imagenet", "ilsvrc"])
+
+For code repositories:
+1. Full GitHub URLs (https://github.com/org/repo)
+2. Keywords from repository descriptions that would match artifact names (e.g., for ResNet paper -> ["resnet", "deep-residual-networks", "residual"])
+
+Be versatile - extract identifying terms that could appear in artifact names even if formatted differently.
+Don't include generic terms like "custom dataset" or "proprietary".
+
+Return ONLY valid JSON (no markdown):
+{{
+  "training_datasets": [
+    {{"name": "exact name", "keywords": ["identifying", "terms"]}}
+  ],
+  "eval_datasets": [
+    {{"name": "exact name", "keywords": ["identifying", "terms"]}}
+  ],
+  "code_repos": [
+    {{"url": "https://github.com/org/repo", "keywords": ["repo", "terms"]}}
+  ]
+}}
+
+README:
+{readme[:4000]}
+"""
+    
+    try:
+        response = bedrock_client.invoke_model(
+            modelId='anthropic.claude-3-haiku-20240307-v1:0',
+            body=json.dumps({
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 1000,
+                "messages": [{
+                    "role": "user",
+                    "content": prompt
+                }]
+            })
+        )
+        
+        result = json.loads(response['body'].read())
+        content = result['content'][0]['text'].strip()
+        
+        # Remove markdown code blocks
+        if content.startswith('```'):
+            content = content.split('\n', 1)[1] if '\n' in content else content[3:]
+        if content.endswith('```'):
+            content = content.rsplit('\n', 1)[0] if '\n' in content else content[:-3]
+        
+        extracted = json.loads(content)
+        print(f"[DEPENDENCY] LLM extracted: {extracted}")
+        
+        # Normalize LLM output to include keywords
+        normalized = {
+            "training_datasets": [],
+            "eval_datasets": [],
+            "code_repos": []
+        }
+        
+        # Handle datasets (could be strings or objects with keywords)
+        for ds in extracted.get('training_datasets', []):
+            if isinstance(ds, dict):
+                normalized['training_datasets'].append(ds)
+            else:
+                # Old format - convert to new format
+                normalized['training_datasets'].append({"name": ds, "keywords": [ds.lower()]})
+        
+        for ds in extracted.get('eval_datasets', []):
+            if isinstance(ds, dict):
+                normalized['eval_datasets'].append(ds)
+            else:
+                normalized['eval_datasets'].append({"name": ds, "keywords": [ds.lower()]})
+        
+        # Handle code repos (could be strings or objects with keywords)
+        for repo in extracted.get('code_repos', []):
+            if isinstance(repo, dict):
+                normalized['code_repos'].append(repo)
+            else:
+                # Old format - just URL string
+                normalized['code_repos'].append({"url": repo, "keywords": []})
+        
+        return normalized
+        
+    except Exception as e:
+        print(f"[DEPENDENCY] Failed to extract: {e}")
+        return {"training_datasets": [], "eval_datasets": [], "code_repos": []}
+
+
+def extract_dependencies_from_code_readme(readme: str) -> dict:
+    """
+    Extract dataset names from code repository README.
+    Code repos are ingested last and can reference datasets.
+    """
+    if not readme or len(readme.strip()) < 50:
+        return {"datasets": []}
+    
+    prompt = f"""Analyze this code repository README and extract dataset names mentioned.
+
+Look for datasets used for training, testing, or evaluation.
+Common patterns: "trained on X", "uses Y dataset", "tested on Z"
+
+Common dataset names: ImageNet, COCO, SQuAD, DIV2K, Flickr2K, BookCorpus, WikiText, etc.
+
+Return ONLY valid JSON (no markdown):
+{{
+  "datasets": ["exact dataset name"]
+}}
+
+README:
+{readme[:4000]}
+"""
+    
+    try:
+        response = bedrock_client.invoke_model(
+            modelId='anthropic.claude-3-haiku-20240307-v1:0',
+            body=json.dumps({
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 800,
+                "messages": [{
+                    "role": "user",
+                    "content": prompt
+                }]
+            })
+        )
+        
+        result = json.loads(response['body'].read())
+        content = result['content'][0]['text'].strip()
+        
+        if content.startswith('```'):
+            content = content.split('\n', 1)[1] if '\n' in content else content[3:]
+        if content.endswith('```'):
+            content = content.rsplit('\n', 1)[0] if '\n' in content else content[:-3]
+        
+        extracted = json.loads(content)
+        print(f"[DEPENDENCY] Code repo datasets: {extracted}")
+        return extracted
+        
+    except Exception as e:
+        print(f"[DEPENDENCY] Failed to extract from code: {e}")
+        return {"datasets": []}
+
+
+def matches_identifier(artifact_name: str, source_url: str, expected: str) -> bool:
+    """
+    Check if an artifact matches an expected identifier.
+    Handles naming variations and GitHub URL matching for code repos.
+    """
+    if not expected or len(expected) < 3:
+        return False
+    
+    expected_lower = expected.lower().strip()
+    artifact_name_lower = artifact_name.lower().strip()
+    
+    # Special handling for GitHub URLs
+    if 'github.com' in expected_lower and source_url and 'github.com' in source_url.lower():
+        # Extract org/repo from both
+        import re
+        
+        def extract_repo_path(url):
+            # Extract org/repo from github.com/org/repo
+            match = re.search(r'github\.com/([\w\-]+/[\w\-\.]+)', url.lower())
+            if match:
+                return match.group(1).rstrip('.git')
+            return None
+        
+        expected_path = extract_repo_path(expected_lower)
+        source_path = extract_repo_path(source_url.lower())
+        
+        if expected_path and source_path:
+            # Direct match or partial match (e.g., "google-research/bert" matches "bert")
+            if expected_path == source_path:
+                return True
+            # Check if repo name matches
+            expected_repo = expected_path.split('/')[-1]
+            source_repo = source_path.split('/')[-1]
+            if expected_repo == source_repo:
+                return True
+    
+    # Normalize common variations
+    expected_normalized = expected_lower.replace('-', '').replace('_', '').replace(' ', '')
+    artifact_normalized = artifact_name_lower.replace('-', '').replace('_', '').replace(' ', '')
+    
+    # Direct match (normalized)
+    if expected_normalized in artifact_normalized or artifact_normalized in expected_normalized:
+        return True
+    
+    # Check if expected is part of artifact name (e.g., "squad" in "rajpurkar-squad")
+    if expected_lower in artifact_name_lower:
+        return True
+    
+    # Check if artifact name ends with expected (e.g., "rajpurkar-squad" ends with "squad")
+    if artifact_name_lower.endswith(expected_lower):
+        return True
+    
+    # URL match (for non-GitHub URLs)
+    if source_url and 'github.com' not in expected_lower and expected_lower in source_url.lower():
+        return True
+    
+    # Extract last part of artifact name (e.g., "hliang001-flickr2k" -> "flickr2k")
+    if '-' in artifact_name_lower:
+        last_part = artifact_name_lower.split('-')[-1]
+        if last_part in expected_normalized or expected_normalized in last_part:
+            return True
+    
+    # Extract identifier from patterns like "org/repo"
+    if '/' in expected:
+        parts = expected.split('/')
+        for part in parts[-2:]:
+            part_clean = part.lower().strip()
+            if len(part_clean) > 2:
+                part_normalized = part_clean.replace('-', '').replace('_', '')
+                if part_normalized in artifact_normalized:
+                    return True
+    
+    return False
+
+
+def find_and_link_to_models(artifact_id: int, artifact_type: str, artifact_name: str, source_url: str, readme: str = ""):
+    """
+    When dataset/code is ingested, find models expecting it and create dependencies.
+    For code repos: also cascade dataset links (code->model implies datasets->model).
+    """
+    print(f"[DEPENDENCY] Linking {artifact_type} '{artifact_name}' to models...")
+    
+    models = run_query(
+        "SELECT id, name, metadata FROM artifacts WHERE type = 'model';",
+        fetch=True
+    )
+    
+    if not models:
+        print("[DEPENDENCY] No models found")
+        return
+    
+    links_created = 0
+    linked_model_ids = []  # Track which models got linked for cascading
+    
+    # For code repos: extract datasets mentioned in code README
+    code_datasets = []
+    if artifact_type == "code" and readme:
+        extracted = extract_dependencies_from_code_readme(readme)
+        code_datasets = extracted.get('datasets', [])
+        print(f"[DEPENDENCY] Code repo mentions datasets: {code_datasets}")
+    
+    for model in models:
+        metadata = model.get('metadata', {})
+        if isinstance(metadata, str):
+            try:
+                metadata = json.loads(metadata)
+            except:
+                continue
+        
+        dependencies = metadata.get('expected_dependencies', {})
+        if not dependencies and not code_datasets:
+            continue
+        
+        matched = False
+        dep_type = 'related_to'
+        
+        if artifact_type == "dataset":
+            # Match dataset directly
+            for expected in dependencies.get('training_datasets', []):
+                # Handle both old format (string) and new format (dict with keywords)
+                if isinstance(expected, dict):
+                    expected_name = expected.get('name', '')
+                    expected_keywords = expected.get('keywords', [])
+                    
+                    # Try matching name
+                    if matches_identifier(artifact_name, source_url, expected_name):
+                        matched = True
+                        dep_type = 'training_dataset'
+                        break
+                    
+                    # Try matching keywords
+                    for keyword in expected_keywords:
+                        if matches_identifier(artifact_name, source_url, keyword):
+                            matched = True
+                            dep_type = 'training_dataset'
+                            print(f"[DEPENDENCY] Matched via keyword: {keyword}")
+                            break
+                    if matched:
+                        break
+                else:
+                    # Old format - simple string
+                    if matches_identifier(artifact_name, source_url, expected):
+                        matched = True
+                        dep_type = 'training_dataset'
+                        break
+            
+            if not matched:
+                for expected in dependencies.get('eval_datasets', []):
+                    if isinstance(expected, dict):
+                        expected_name = expected.get('name', '')
+                        expected_keywords = expected.get('keywords', [])
+                        
+                        if matches_identifier(artifact_name, source_url, expected_name):
+                            matched = True
+                            dep_type = 'evaluation_dataset'
+                            break
+                        
+                        for keyword in expected_keywords:
+                            if matches_identifier(artifact_name, source_url, keyword):
+                                matched = True
+                                dep_type = 'evaluation_dataset'
+                                print(f"[DEPENDENCY] Matched via keyword: {keyword}")
+                                break
+                        if matched:
+                            break
+                    else:
+                        if matches_identifier(artifact_name, source_url, expected):
+                            matched = True
+                            dep_type = 'evaluation_dataset'
+                            break
+        
+        elif artifact_type == "code":
+            # Match code repo directly via expected_dependencies
+            for expected in dependencies.get('code_repos', []):
+                # Handle both old format (string URL) and new format (dict with keywords)
+                if isinstance(expected, dict):
+                    expected_url = expected.get('url', '')
+                    expected_keywords = expected.get('keywords', [])
+                    
+                    # Try matching URL
+                    if matches_identifier(artifact_name, source_url, expected_url):
+                        matched = True
+                        dep_type = 'code_repository'
+                        break
+                    
+                    # Try matching keywords
+                    for keyword in expected_keywords:
+                        if matches_identifier(artifact_name, source_url, keyword):
+                            matched = True
+                            dep_type = 'code_repository'
+                            print(f"[DEPENDENCY] Matched via keyword: {keyword}")
+                            break
+                    if matched:
+                        break
+                else:
+                    # Old format - simple string
+                    if matches_identifier(artifact_name, source_url, expected):
+                        matched = True
+                        dep_type = 'code_repository'
+                        break
+            
+            # Also match if code repo mentions datasets that the model uses
+            if not matched and code_datasets:
+                model_datasets = dependencies.get('training_datasets', []) + dependencies.get('eval_datasets', [])
+                for code_ds in code_datasets:
+                    for model_ds in model_datasets:
+                        # Extract name from dict if needed
+                        model_ds_name = model_ds.get('name', model_ds) if isinstance(model_ds, dict) else model_ds
+                        
+                        if matches_identifier(code_ds, "", model_ds_name) or matches_identifier(model_ds_name, "", code_ds):
+                            matched = True
+                            dep_type = 'code_repository'
+                            print(f"[DEPENDENCY] Code repo matched via dataset: {code_ds} ~ {model_ds_name}")
+                            break
+                    if matched:
+                        break
+        
+        if matched:
+            try:
+                run_query(
+                    """
+                    INSERT INTO artifact_dependencies 
+                    (model_id, artifact_id, dependency_type, source)
+                    VALUES (%s, %s, %s, 'auto_discovered')
+                    ON CONFLICT DO NOTHING;
+                    """,
+                    (model['id'], artifact_id, dep_type),
+                    fetch=False
+                )
+                links_created += 1
+                linked_model_ids.append(model['id'])
+                print(f"[DEPENDENCY] Linked {artifact_name} -> model {model['id']} as {dep_type}")
+            except Exception as e:
+                print(f"[DEPENDENCY] Failed to link: {e}")
+    
+    print(f"[DEPENDENCY] Created {links_created} links for '{artifact_name}'")
+    
+    # CASCADE: If code repo linked to models, link datasets from code README to same models
+    if artifact_type == "code" and linked_model_ids and code_datasets:
+        cascade_dataset_links(linked_model_ids, code_datasets)
+
+
+def cascade_dataset_links(model_ids: list, dataset_names: list):
+    """
+    After linking code repo to models, link datasets mentioned in code README to same models.
+    This creates the chain: dataset -> model (via code repo connection).
+    """
+    print(f"[DEPENDENCY CASCADE] Linking datasets {dataset_names} to models {model_ids}...")
+    
+    # Find all dataset artifacts in database
+    all_datasets = run_query(
+        "SELECT id, name, source_url FROM artifacts WHERE type = 'dataset';",
+        fetch=True
+    )
+    
+    if not all_datasets:
+        print("[DEPENDENCY CASCADE] No datasets found")
+        return
+    
+    links_created = 0
+    
+    for dataset in all_datasets:
+        dataset_id = dataset['id']
+        dataset_name = dataset['name']
+        dataset_url = dataset.get('source_url', '')
+        
+        # Check if this dataset matches any dataset mentioned in code README
+        for mentioned_ds in dataset_names:
+            if matches_identifier(dataset_name, dataset_url, mentioned_ds):
+                # Link this dataset to all models that the code repo is linked to
+                for model_id in model_ids:
+                    try:
+                        run_query(
+                            """
+                            INSERT INTO artifact_dependencies 
+                            (model_id, artifact_id, dependency_type, source)
+                            VALUES (%s, %s, %s, 'cascaded_from_code')
+                            ON CONFLICT DO NOTHING;
+                            """,
+                            (model_id, dataset_id, 'training_dataset'),
+                            fetch=False
+                        )
+                        links_created += 1
+                        print(f"[DEPENDENCY CASCADE] Linked dataset {dataset_name} -> model {model_id}")
+                    except Exception as e:
+                        print(f"[DEPENDENCY CASCADE] Failed: {e}")
+                break
+    
+    print(f"[DEPENDENCY CASCADE] Created {links_created} cascaded dataset links")
+
 
 # -----------------------------
 # LOGGING HELPERS
@@ -225,6 +762,17 @@ def lambda_handler(event, context):
             metadata_dict['created_at'] = metadata_dict['created_at'].isoformat()
         if metadata_dict.get('updated_at'):
             metadata_dict['updated_at'] = metadata_dict['updated_at'].isoformat()
+        
+        # Extract dataset/code dependencies for models (separate from lineage)
+        if artifact_type == "model":
+            readme_text = metadata_dict.get('readme', '')
+            if readme_text:
+                print(f"[DEPENDENCY] Extracting dependencies from model README...")
+                dependencies = extract_artifact_dependencies(readme_text)
+                if dependencies and any(dependencies.values()):
+                    metadata_dict['expected_dependencies'] = dependencies
+                    print(f"[DEPENDENCY] Stored: {dependencies}")
+        
         metadata_json = json.dumps(metadata_dict)
 
         # --------------------------
@@ -266,7 +814,14 @@ def lambda_handler(event, context):
         )
 
         # --------------------------
-        # 6a. Auto-extract HF lineage from config.json (if present)
+        # 6a. Link dataset/code to models (uses artifact_dependencies table)
+        # --------------------------
+        if artifact_type in ("dataset", "code"):
+            readme_for_code = metadata_dict.get('readme', '') if artifact_type == "code" else ""
+            find_and_link_to_models(artifact_id, artifact_type, artifact_name, url, readme_for_code)
+
+        # --------------------------
+        # 6b. Auto-extract MODEL lineage from config.json (uses artifact_relationships table)
         # --------------------------
 
         auto_relationships = []

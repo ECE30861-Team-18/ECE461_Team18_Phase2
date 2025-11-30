@@ -45,7 +45,29 @@ CREATE INDEX IF NOT EXISTS idx_relationships_from ON artifact_relationships(from
 cur.execute("""
 CREATE INDEX IF NOT EXISTS idx_relationships_to ON artifact_relationships(to_artifact_id);
 """)
+
+# Create artifact_dependencies table for dataset/code relationships (separate from lineage)
+cur.execute("""
+CREATE TABLE IF NOT EXISTS artifact_dependencies (
+    id SERIAL PRIMARY KEY,
+    model_id INTEGER NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+    artifact_id INTEGER NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+    dependency_type TEXT NOT NULL,
+    source TEXT DEFAULT 'auto_discovered',
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(model_id, artifact_id, dependency_type)
+);
+""")
+
+cur.execute("""
+CREATE INDEX IF NOT EXISTS idx_dependencies_model ON artifact_dependencies(model_id);
+""")
+
+cur.execute("""
+CREATE INDEX IF NOT EXISTS idx_dependencies_artifact ON artifact_dependencies(artifact_id);
+""")
+
 conn.commit()
 cur.close()
 conn.close()
-print("✅ Table created successfully!")
+print("✅ Tables created successfully!")

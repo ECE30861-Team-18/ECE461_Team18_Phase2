@@ -523,11 +523,27 @@ class DatasetQualityMetric(Metric):
         start_time = time.time()
         
         try:
-            # For now, base quality on dataset documentation and known datasets
-            # score = self._evaluate_dataset_reputation(model_info)
-            if model_info.get('dataset_present'):
-                score = 1.0
-            else: 
+            # Check if this model has any linked datasets in artifact_dependencies table
+            model_id = model_info.get('id')
+            if model_id:
+                from rds_connection import run_query
+                
+                # Query for linked datasets
+                linked_datasets = run_query(
+                    """
+                    SELECT COUNT(*) as dataset_count
+                    FROM artifact_dependencies
+                    WHERE model_id = %s AND dependency_type IN ('training_dataset', 'evaluation_dataset');
+                    """,
+                    (model_id,),
+                    fetch=True
+                )
+                
+                if linked_datasets and linked_datasets[0]['dataset_count'] > 0:
+                    score = 1.0
+                else:
+                    score = 0.0
+            else:
                 score = 0.0
             
             self._latency = int((time.time() - start_time) * 1000)
@@ -536,28 +552,6 @@ class DatasetQualityMetric(Metric):
         except Exception as e:
             self._latency = int((time.time() - start_time) * 1000)
             return 0.0
-    
-    def _evaluate_dataset_reputation(self, model_info: Dict[str, Any]) -> float:
-        """Evaluate based on known high-quality datasets"""
-        # datasets = model_info.get("datasets", [])
-        # if not datasets:
-        #     return 0.2
-        # homepage = (model_info.get("homepage") or "").lower()
-        # if not homepage:
-        #     return 0.2
-        readme = (model_info.get("readme", "")).lower()
-        
-        high_quality_datasets = [
-            "common_voice", "librispeech", "imagenet", "coco", "squad",
-            "glue", "superglue", "wikitext", "bookcorpus", "openwebtext", "arxiv", "wikipedia"
-        ]
-        
-        for dataset in high_quality_datasets:
-            if dataset in readme:
-                return 1.0
-        
-        # Unknown datasets get moderate score
-        return 0.5
     
     def calculate_latency(self) -> int:
         return getattr(self, '_latency', 0)
@@ -575,11 +569,27 @@ class CodeQualityMetric(Metric):
         start_time = time.time()
         
         try:
-            # Simplified code quality assessment
-            # score = self._evaluate_code_presence(model_info)
-            if model_info.get('code_present'):
-                score = 1.0
-            else: 
+            # Check if this model has any linked code repositories in artifact_dependencies table
+            model_id = model_info.get('id')
+            if model_id:
+                from rds_connection import run_query
+                
+                # Query for linked code repos
+                linked_code = run_query(
+                    """
+                    SELECT COUNT(*) as code_count
+                    FROM artifact_dependencies
+                    WHERE model_id = %s AND dependency_type = 'code_repository';
+                    """,
+                    (model_id,),
+                    fetch=True
+                )
+                
+                if linked_code and linked_code[0]['code_count'] > 0:
+                    score = 1.0
+                else:
+                    score = 0.0
+            else:
                 score = 0.0
             
             self._latency = int((time.time() - start_time) * 1000)
@@ -588,68 +598,6 @@ class CodeQualityMetric(Metric):
         except Exception as e:
             self._latency = int((time.time() - start_time) * 1000)
             return 0.0
-    
-    def _evaluate_code_presence(self, model_info: Dict[str, Any]) -> float:
-        """Basic evaluation of code presence and organization"""
-        files = model_info.get("siblings") or []
-        readme = model_info.get("readme", "").lower()
-        
-        # If no files but has substantial README, still give some credit
-        if not files:
-            if len(readme) > 1000 and any(keyword in readme for keyword in ["usage", "example", "code", "implementation"]):
-                return 0.5
-            return 0.1
-        
-        score = 0.0
-        
-        # Look for structured code files
-        code_extensions = [".py", ".ipynb", ".js", ".ts", ".r", ".java", ".cpp", ".c"]
-        code_files = []
-        for f in files:
-            name = str((f or {}).get("rfilename") or (f or {}).get("filename") or (f or {}).get("path") or "").lower()
-            if any(name.endswith(ext) for ext in code_extensions):
-                code_files.append(f)
-        if code_files:
-            score += 0.4
-        
-        # Look for configuration files
-        config_indicators = ["config", "settings", "hyperparameters", "params"]
-        config_files = []
-        for f in files:
-            name = str((f or {}).get("rfilename") or (f or {}).get("filename") or (f or {}).get("path") or "").lower()
-            if any(indicator in name for indicator in config_indicators):
-                config_files.append(f)
-        if config_files:
-            score += 0.3
-        
-        # Look for requirements or setup files
-        setup_indicators = ["requirements", "setup", "environment", "conda", "dockerfile", "makefile", "poetry"]
-        for file_info in files:
-            filename = str((file_info or {}).get("rfilename") or (file_info or {}).get("filename") or (file_info or {}).get("path") or "").lower()
-            if any(indicator in filename for indicator in setup_indicators):
-                score += 0.3
-                break
-        
-        # Look for model-specific files that indicate quality
-        model_indicators = ["model", "checkpoint", "weights", "tokenizer", "vocab"]
-        model_files = []
-        for f in files:
-            name = str((f or {}).get("rfilename") or (f or {}).get("filename") or (f or {}).get("path") or "").lower()
-            if any(indicator in name for indicator in model_indicators):
-                model_files.append(f)
-        if model_files:
-            score += 0.2
-        
-        # README-based bonus even when files exist (indicates usage and examples)
-        readme_code_terms = ["usage", "example", "code", "import", "from transformers", "model =", "tokenizer =", "```python", "```"]
-        if any(term in readme for term in readme_code_terms):
-            score += 0.2
-        
-        # Ensure a small baseline if files exist but indicators are sparse
-        if score == 0.0:
-            score = 0.1
-        
-        return min(1.0, score)
     
     def calculate_latency(self) -> int:
         return getattr(self, '_latency', 0)

@@ -101,21 +101,30 @@ def extract_artifact_dependencies(readme: str) -> dict:
     # Step 2: Extract GitHub URLs directly (covers most cases like bert-base-uncased)
     github_urls = extract_github_urls(readme)
     
-    if frontmatter_datasets or github_urls:
+    # If we found YAML datasets, use only those for datasets (exact matches)
+    # But still use LLM for code repos since GitHub URLs in README might not be the actual model repo
+    if frontmatter_datasets and not github_urls:
         print(f"[DEPENDENCY] Found datasets in frontmatter: {frontmatter_datasets}")
-        print(f"[DEPENDENCY] Found GitHub URLs: {github_urls}")
+        print(f"[DEPENDENCY] Skipping LLM - using only YAML datasets")
         
-        # Convert to format with keywords
-        formatted_datasets = [{"name": ds, "keywords": [ds.lower()]} for ds in frontmatter_datasets]
-        formatted_repos = [{"url": url, "keywords": []} for url in github_urls]
+        # Convert to format WITHOUT keywords - we have exact matches
+        formatted_datasets = [{"name": ds, "keywords": []} for ds in frontmatter_datasets]
         
         return {
             "training_datasets": formatted_datasets,
             "eval_datasets": [],
-            "code_repos": formatted_repos
+            "code_repos": []
         }
     
-    # Step 3: Use LLM for body content (fallback)
+    # Step 3: Use LLM for body content
+    # - Always for code repos (GitHub URLs might reference other things)
+    # - Only if no YAML datasets found
+    if frontmatter_datasets:
+        print(f"[DEPENDENCY] Found datasets in frontmatter: {frontmatter_datasets}")
+        print(f"[DEPENDENCY] Using LLM for code repos only")
+    if github_urls:
+        print(f"[DEPENDENCY] Found GitHub URLs: {github_urls}")
+        print(f"[DEPENDENCY] Using LLM to add keywords for flexible matching")
     prompt = f"""Analyze this machine learning model README and extract information about datasets and code repositories.
 
 For datasets, extract:
@@ -179,27 +188,40 @@ README:
             "code_repos": []
         }
         
-        # Handle datasets (could be strings or objects with keywords)
-        for ds in extracted.get('training_datasets', []):
-            if isinstance(ds, dict):
-                normalized['training_datasets'].append(ds)
-            else:
-                # Old format - convert to new format
-                normalized['training_datasets'].append({"name": ds, "keywords": [ds.lower()]})
+        # If we have YAML datasets, use those instead of LLM datasets (no keywords)
+        if frontmatter_datasets:
+            normalized['training_datasets'] = [{"name": ds, "keywords": []} for ds in frontmatter_datasets]
+        else:
+            # Use LLM datasets with keywords
+            for ds in extracted.get('training_datasets', []):
+                if isinstance(ds, dict):
+                    normalized['training_datasets'].append(ds)
+                else:
+                    normalized['training_datasets'].append({"name": ds, "keywords": [ds.lower()]})
+            
+            for ds in extracted.get('eval_datasets', []):
+                if isinstance(ds, dict):
+                    normalized['eval_datasets'].append(ds)
+                else:
+                    normalized['eval_datasets'].append({"name": ds, "keywords": [ds.lower()]})
         
-        for ds in extracted.get('eval_datasets', []):
-            if isinstance(ds, dict):
-                normalized['eval_datasets'].append(ds)
-            else:
-                normalized['eval_datasets'].append({"name": ds, "keywords": [ds.lower()]})
+        # Always use LLM for code repos (with keywords for flexibility)
+        # Combine extracted GitHub URLs with LLM results
+        all_code_repos = []
         
-        # Handle code repos (could be strings or objects with keywords)
+        # Add regex-extracted URLs with LLM keywords
+        if github_urls:
+            for url in github_urls:
+                all_code_repos.append({"url": url, "keywords": []})
+        
+        # Add LLM-extracted code repos
         for repo in extracted.get('code_repos', []):
             if isinstance(repo, dict):
-                normalized['code_repos'].append(repo)
+                all_code_repos.append(repo)
             else:
-                # Old format - just URL string
-                normalized['code_repos'].append({"url": repo, "keywords": []})
+                all_code_repos.append({"url": repo, "keywords": []})
+        
+        normalized['code_repos'] = all_code_repos
         
         return normalized
         
@@ -265,7 +287,7 @@ README:
 def matches_identifier(artifact_name: str, source_url: str, expected: str) -> bool:
     """
     Check if an artifact matches an expected identifier.
-    Handles naming variations and GitHub URL matching for code repos.
+    Uses strict matching to avoid false positives with generic terms.
     """
     if not expected or len(expected) < 3:
         return False
@@ -273,13 +295,11 @@ def matches_identifier(artifact_name: str, source_url: str, expected: str) -> bo
     expected_lower = expected.lower().strip()
     artifact_name_lower = artifact_name.lower().strip()
     
-    # Special handling for GitHub URLs
+    # Special handling for GitHub URLs - must match closely
     if 'github.com' in expected_lower and source_url and 'github.com' in source_url.lower():
-        # Extract org/repo from both
         import re
         
         def extract_repo_path(url):
-            # Extract org/repo from github.com/org/repo
             match = re.search(r'github\.com/([\w\-]+/[\w\-\.]+)', url.lower())
             if match:
                 return match.group(1).rstrip('.git')
@@ -289,50 +309,52 @@ def matches_identifier(artifact_name: str, source_url: str, expected: str) -> bo
         source_path = extract_repo_path(source_url.lower())
         
         if expected_path and source_path:
-            # Direct match or partial match (e.g., "google-research/bert" matches "bert")
+            # Exact match
             if expected_path == source_path:
                 return True
-            # Check if repo name matches
-            expected_repo = expected_path.split('/')[-1]
-            source_repo = source_path.split('/')[-1]
-            if expected_repo == source_repo:
-                return True
+            
+            # Check org/repo components
+            expected_parts = expected_path.split('/')
+            source_parts = source_path.split('/')
+            
+            if len(expected_parts) == 2 and len(source_parts) == 2:
+                expected_org, expected_repo = expected_parts
+                source_org, source_repo = source_parts
+                
+                # Both org AND repo must have substantial overlap
+                org_match = (expected_org in source_org or source_org in expected_org)
+                repo_match = (expected_repo in source_repo or source_repo in expected_repo)
+                
+                # Require BOTH to match
+                if org_match and repo_match:
+                    return True
     
-    # Normalize common variations
+    # For non-URL matching, require much stricter criteria
     expected_normalized = expected_lower.replace('-', '').replace('_', '').replace(' ', '')
     artifact_normalized = artifact_name_lower.replace('-', '').replace('_', '').replace(' ', '')
     
-    # Direct match (normalized)
-    if expected_normalized in artifact_normalized or artifact_normalized in expected_normalized:
+    # Exact match
+    if expected_normalized == artifact_normalized:
         return True
     
-    # Check if expected is part of artifact name (e.g., "squad" in "rajpurkar-squad")
-    if expected_lower in artifact_name_lower:
+    # For dataset names: check if expected is substantial part (> 50% of artifact name)
+    if len(expected_normalized) >= 5:
+        # Check if expected is a significant part
+        if expected_normalized in artifact_normalized:
+            # Must be at least 50% of the artifact name to match
+            overlap_ratio = len(expected_normalized) / len(artifact_normalized)
+            if overlap_ratio >= 0.5:
+                return True
+        
+        # Check reverse
+        if artifact_normalized in expected_normalized:
+            overlap_ratio = len(artifact_normalized) / len(expected_normalized)
+            if overlap_ratio >= 0.5:
+                return True
+    
+    # Check suffix matching for datasets (e.g., "rajpurkar-squad" ends with "squad")
+    if artifact_name_lower.endswith('-' + expected_lower) or artifact_name_lower.endswith('_' + expected_lower):
         return True
-    
-    # Check if artifact name ends with expected (e.g., "rajpurkar-squad" ends with "squad")
-    if artifact_name_lower.endswith(expected_lower):
-        return True
-    
-    # URL match (for non-GitHub URLs)
-    if source_url and 'github.com' not in expected_lower and expected_lower in source_url.lower():
-        return True
-    
-    # Extract last part of artifact name (e.g., "hliang001-flickr2k" -> "flickr2k")
-    if '-' in artifact_name_lower:
-        last_part = artifact_name_lower.split('-')[-1]
-        if last_part in expected_normalized or expected_normalized in last_part:
-            return True
-    
-    # Extract identifier from patterns like "org/repo"
-    if '/' in expected:
-        parts = expected.split('/')
-        for part in parts[-2:]:
-            part_clean = part.lower().strip()
-            if len(part_clean) > 2:
-                part_normalized = part_clean.replace('-', '').replace('_', '')
-                if part_normalized in artifact_normalized:
-                    return True
     
     return False
 

@@ -607,8 +607,22 @@ def recalculate_model_ratings(model_ids: list):
                 continue
             
             model = model_result[0]
-            metadata = json.loads(model.get('metadata', '{}'))
-            old_ratings = json.loads(model.get('ratings', '{}'))
+            
+            # Handle metadata - could be dict or JSON string
+            metadata = model.get('metadata', {})
+            if isinstance(metadata, str):
+                try:
+                    metadata = json.loads(metadata)
+                except:
+                    metadata = {}
+            
+            # Handle old ratings - could be dict or JSON string
+            old_ratings = model.get('ratings', {})
+            if isinstance(old_ratings, str):
+                try:
+                    old_ratings = json.loads(old_ratings)
+                except:
+                    old_ratings = {}
             
             print(f"[RATING UPDATE] Model {model_id} ('{model['name']}')")
             print(f"[RATING UPDATE]   Old dataset_quality: {old_ratings.get('dataset_quality', 'N/A')}")

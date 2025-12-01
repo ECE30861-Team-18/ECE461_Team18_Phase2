@@ -101,24 +101,8 @@ def extract_artifact_dependencies(readme: str) -> dict:
     # Step 2: Extract GitHub URLs directly (covers most cases like bert-base-uncased)
     github_urls = extract_github_urls(readme)
     
-    # If we found YAML datasets, use only those for datasets (exact matches)
-    # But still use LLM for code repos since GitHub URLs in README might not be the actual model repo
-    if frontmatter_datasets and not github_urls:
-        print(f"[DEPENDENCY] Found datasets in frontmatter: {frontmatter_datasets}")
-        print(f"[DEPENDENCY] Skipping LLM - using only YAML datasets")
-        
-        # Convert to format WITHOUT keywords - we have exact matches
-        formatted_datasets = [{"name": ds, "keywords": []} for ds in frontmatter_datasets]
-        
-        return {
-            "training_datasets": formatted_datasets,
-            "eval_datasets": [],
-            "code_repos": []
-        }
-    
-    # Step 3: Use LLM for body content
-    # - Always for code repos (GitHub URLs might reference other things)
-    # - Only if no YAML datasets found
+    # Step 3: Always use LLM to extract keywords (even if we have frontmatter)
+    # Frontmatter gives exact names, LLM adds flexible matching keywords
     if frontmatter_datasets:
         print(f"[DEPENDENCY] Found datasets in frontmatter: {frontmatter_datasets}")
         print(f"[DEPENDENCY] Using LLM for code repos only")
@@ -188,9 +172,36 @@ README:
             "code_repos": []
         }
         
-        # If we have YAML datasets, use those instead of LLM datasets (no keywords)
+        # Merge frontmatter datasets (exact names) with LLM keywords
         if frontmatter_datasets:
-            normalized['training_datasets'] = [{"name": ds, "keywords": []} for ds in frontmatter_datasets]
+            # Build a map of LLM dataset names to their keywords
+            llm_dataset_keywords = {}
+            for ds in extracted.get('training_datasets', []) + extracted.get('eval_datasets', []):
+                if isinstance(ds, dict):
+                    ds_name = ds.get('name', '').lower()
+                    ds_keywords = ds.get('keywords', [])
+                    if ds_name:
+                        llm_dataset_keywords[ds_name] = ds_keywords
+            
+            # Use frontmatter names but add LLM keywords if found
+            for fm_ds in frontmatter_datasets:
+                fm_ds_lower = fm_ds.lower()
+                keywords = llm_dataset_keywords.get(fm_ds_lower, [])
+                
+                # If no exact match, try to find partial match
+                if not keywords:
+                    for llm_name, llm_kw in llm_dataset_keywords.items():
+                        if fm_ds_lower in llm_name or llm_name in fm_ds_lower:
+                            keywords = llm_kw
+                            break
+                
+                # Add default keyword if LLM didn't provide any
+                if not keywords:
+                    keywords = [fm_ds_lower]
+                
+                normalized['training_datasets'].append({"name": fm_ds, "keywords": keywords})
+            
+            print(f"[DEPENDENCY] Merged frontmatter datasets with LLM keywords: {normalized['training_datasets']}")
         else:
             # Use LLM datasets with keywords
             for ds in extracted.get('training_datasets', []):
@@ -206,20 +217,41 @@ README:
                     normalized['eval_datasets'].append({"name": ds, "keywords": [ds.lower()]})
         
         # Always use LLM for code repos (with keywords for flexibility)
-        # Combine extracted GitHub URLs with LLM results
+        # Merge regex-extracted URLs with LLM-extracted repos and keywords
         all_code_repos = []
+        url_to_keywords = {}
         
-        # Add regex-extracted URLs with LLM keywords
-        if github_urls:
-            for url in github_urls:
-                all_code_repos.append({"url": url, "keywords": []})
-        
-        # Add LLM-extracted code repos
+        # First, collect LLM-extracted repos with their keywords
         for repo in extracted.get('code_repos', []):
             if isinstance(repo, dict):
-                all_code_repos.append(repo)
+                repo_url = repo.get('url', '')
+                repo_keywords = repo.get('keywords', [])
+                if repo_url:
+                    url_to_keywords[repo_url.lower()] = repo_keywords
+                    all_code_repos.append({"url": repo_url, "keywords": repo_keywords})
             else:
-                all_code_repos.append({"url": repo, "keywords": []})
+                # Old format - just URL string
+                if repo:
+                    url_to_keywords[repo.lower()] = []
+                    all_code_repos.append({"url": repo, "keywords": []})
+        
+        # Add regex-extracted URLs that weren't already found by LLM
+        if github_urls:
+            for url in github_urls:
+                # Check if this URL was already added by LLM
+                url_lower = url.lower()
+                already_added = False
+                for existing_url in url_to_keywords.keys():
+                    # Normalize both URLs for comparison (remove .git, trailing slashes)
+                    norm_url = url_lower.rstrip('/').rstrip('.git')
+                    norm_existing = existing_url.rstrip('/').rstrip('.git')
+                    if norm_url == norm_existing:
+                        already_added = True
+                        break
+                
+                if not already_added:
+                    # Add with empty keywords since LLM didn't extract it
+                    all_code_repos.append({"url": url, "keywords": []})
         
         normalized['code_repos'] = all_code_repos
         

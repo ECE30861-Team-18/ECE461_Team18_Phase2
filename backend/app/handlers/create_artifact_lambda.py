@@ -525,6 +525,10 @@ def find_and_link_to_models(artifact_id: int, artifact_type: str, artifact_name:
     
     print(f"[DEPENDENCY] Created {links_created} links for '{artifact_name}'")
     
+    # Recalculate ratings for models that got new dependencies
+    if linked_model_ids:
+        recalculate_model_ratings(linked_model_ids)
+    
     # CASCADE: If code repo linked to models, link datasets from code README to same models
     if artifact_type == "code" and linked_model_ids and code_datasets:
         cascade_dataset_links(linked_model_ids, code_datasets)
@@ -577,6 +581,63 @@ def cascade_dataset_links(model_ids: list, dataset_names: list):
                 break
     
     print(f"[DEPENDENCY CASCADE] Created {links_created} cascaded dataset links")
+    
+    # Recalculate ratings for affected models
+    if links_created > 0:
+        recalculate_model_ratings(model_ids)
+
+
+def recalculate_model_ratings(model_ids: list):
+    """
+    Recalculate ratings for models after linking dependencies.
+    This ensures dataset_quality and code_quality metrics are updated.
+    """
+    print(f"[RATING UPDATE] Recalculating ratings for {len(model_ids)} models...")
+    
+    for model_id in model_ids:
+        try:
+            # Fetch model info
+            model_result = run_query(
+                "SELECT id, type, name, source_url, metadata FROM artifacts WHERE id = %s;",
+                (model_id,),
+                fetch=True
+            )
+            
+            if not model_result:
+                continue
+            
+            model = model_result[0]
+            metadata = json.loads(model.get('metadata', '{}'))
+            
+            # Reconstruct URLData object for rating
+            url_data = URLData(
+                url=model['source_url'],
+                readme=metadata.get('readme', ''),
+                created_at=metadata.get('created_at'),
+                updated_at=metadata.get('updated_at')
+            )
+            
+            # Calculate new rating
+            calculator = MetricCalculator()
+            rating = calculator.calculate_net_score(url_data)
+            
+            # Update the rating in database
+            run_query(
+                """
+                UPDATE artifacts
+                SET ratings = %s, net_score = %s
+                WHERE id = %s;
+                """,
+                (json.dumps(rating), rating.get('NetScore'), model_id),
+                fetch=False
+            )
+            
+            print(f"[RATING UPDATE] Updated model {model_id}: NetScore = {rating.get('NetScore')}")
+            
+        except Exception as e:
+            print(f"[RATING UPDATE] Failed for model {model_id}: {e}")
+    
+    print(f"[RATING UPDATE] Completed rating updates")
 
 
 # -----------------------------

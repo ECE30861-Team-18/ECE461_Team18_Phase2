@@ -598,7 +598,7 @@ def recalculate_model_ratings(model_ids: list):
         try:
             # Fetch model info
             model_result = run_query(
-                "SELECT id, type, name, source_url, metadata FROM artifacts WHERE id = %s;",
+                "SELECT id, type, name, source_url, metadata, ratings FROM artifacts WHERE id = %s;",
                 (model_id,),
                 fetch=True
             )
@@ -608,6 +608,12 @@ def recalculate_model_ratings(model_ids: list):
             
             model = model_result[0]
             metadata = json.loads(model.get('metadata', '{}'))
+            old_ratings = json.loads(model.get('ratings', '{}'))
+            
+            print(f"[RATING UPDATE] Model {model_id} ('{model['name']}')")
+            print(f"[RATING UPDATE]   Old dataset_quality: {old_ratings.get('dataset_quality', 'N/A')}")
+            print(f"[RATING UPDATE]   Old code_quality: {old_ratings.get('code_quality', 'N/A')}")
+            print(f"[RATING UPDATE]   Old net_score: {old_ratings.get('net_score', 'N/A')}")
             
             # Add the model ID to metadata for metric calculation
             metadata['id'] = model_id
@@ -615,6 +621,10 @@ def recalculate_model_ratings(model_ids: list):
             # Calculate new rating using MetricCalculator
             calculator = MetricCalculator()
             rating = calculator.calculate_all_metrics(metadata, category="MODEL")
+            
+            print(f"[RATING UPDATE]   New dataset_quality: {rating.get('dataset_quality', 'N/A')}")
+            print(f"[RATING UPDATE]   New code_quality: {rating.get('code_quality', 'N/A')}")
+            print(f"[RATING UPDATE]   New net_score: {rating.get('net_score', 'N/A')}")
             
             # Update the rating in database
             run_query(
@@ -627,10 +637,12 @@ def recalculate_model_ratings(model_ids: list):
                 fetch=False
             )
             
-            print(f"[RATING UPDATE] Updated model {model_id}: NetScore = {rating.get('net_score')}")
+            print(f"[RATING UPDATE] ✓ Database updated for model {model_id}")
             
         except Exception as e:
-            print(f"[RATING UPDATE] Failed for model {model_id}: {e}")
+            print(f"[RATING UPDATE] ✗ Failed for model {model_id}: {e}")
+            import traceback
+            traceback.print_exc()
     
     print(f"[RATING UPDATE] Completed rating updates")
 

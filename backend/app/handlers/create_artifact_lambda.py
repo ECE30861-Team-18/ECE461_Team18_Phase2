@@ -589,16 +589,15 @@ def cascade_dataset_links(model_ids: list, dataset_names: list):
 
 def recalculate_model_ratings(model_ids: list):
     """
-    Recalculate ratings for models after linking dependencies.
-    This ensures dataset_quality and code_quality metrics are updated.
+    Update only dataset_quality and code_quality metrics after linking dependencies.
+    Preserves other expensive metrics (performance, reproducibility) from original rating.
     """
-    print(f"[RATING UPDATE] Recalculating ratings for {len(model_ids)} models...")
+    from submetrics import DatasetQualityMetric, CodeQualityMetric
     
     for model_id in model_ids:
         try:
-            # Fetch model info
             model_result = run_query(
-                "SELECT id, type, name, source_url, metadata, ratings FROM artifacts WHERE id = %s;",
+                "SELECT id, metadata, ratings FROM artifacts WHERE id = %s;",
                 (model_id,),
                 fetch=True
             )
@@ -608,57 +607,46 @@ def recalculate_model_ratings(model_ids: list):
             
             model = model_result[0]
             
-            # Handle metadata - could be dict or JSON string
+            # Parse metadata and ratings (handle both dict and JSON string)
             metadata = model.get('metadata', {})
             if isinstance(metadata, str):
-                try:
-                    metadata = json.loads(metadata)
-                except:
-                    metadata = {}
+                metadata = json.loads(metadata)
             
-            # Handle old ratings - could be dict or JSON string
-            old_ratings = model.get('ratings', {})
-            if isinstance(old_ratings, str):
-                try:
-                    old_ratings = json.loads(old_ratings)
-                except:
-                    old_ratings = {}
+            ratings = model.get('ratings', {})
+            if isinstance(ratings, str):
+                ratings = json.loads(ratings)
             
-            print(f"[RATING UPDATE] Model {model_id} ('{model['name']}')")
-            print(f"[RATING UPDATE]   Old dataset_quality: {old_ratings.get('dataset_quality', 'N/A')}")
-            print(f"[RATING UPDATE]   Old code_quality: {old_ratings.get('code_quality', 'N/A')}")
-            print(f"[RATING UPDATE]   Old net_score: {old_ratings.get('net_score', 'N/A')}")
-            
-            # Add the model ID to metadata for metric calculation
+            # Add model ID for queries
             metadata['id'] = model_id
             
-            # Calculate new rating using MetricCalculator
-            calculator = MetricCalculator()
-            rating = calculator.calculate_all_metrics(metadata, category="MODEL")
+            # Recalculate only dependency-related metrics
+            dataset_metric = DatasetQualityMetric()
+            code_metric = CodeQualityMetric()
             
-            print(f"[RATING UPDATE]   New dataset_quality: {rating.get('dataset_quality', 'N/A')}")
-            print(f"[RATING UPDATE]   New code_quality: {rating.get('code_quality', 'N/A')}")
-            print(f"[RATING UPDATE]   New net_score: {rating.get('net_score', 'N/A')}")
+            ratings['dataset_quality'] = dataset_metric.calculate_metric(metadata)
+            ratings['code_quality'] = code_metric.calculate_metric(metadata)
             
-            # Update the rating in database
+            # Recalculate net_score with updated metrics (all weights are 0.125)
+            net_score = 0.0
+            for key, value in ratings.items():
+                if key.endswith('_latency') or key in ['net_score', 'net_score_latency', 'category']:
+                    continue
+                if isinstance(value, dict):
+                    net_score += (sum(value.values()) / len(value) if value else 0.0) * 0.125
+                else:
+                    net_score += float(value) * 0.125
+            
+            ratings['net_score'] = round(net_score, 3)
+            
+            # Update database
             run_query(
-                """
-                UPDATE artifacts
-                SET ratings = %s, net_score = %s
-                WHERE id = %s;
-                """,
-                (json.dumps(rating), rating.get('net_score'), model_id),
+                "UPDATE artifacts SET ratings = %s, net_score = %s WHERE id = %s;",
+                (json.dumps(ratings), ratings['net_score'], model_id),
                 fetch=False
             )
             
-            print(f"[RATING UPDATE] ✓ Database updated for model {model_id}")
-            
         except Exception as e:
-            print(f"[RATING UPDATE] ✗ Failed for model {model_id}: {e}")
-            import traceback
-            traceback.print_exc()
-    
-    print(f"[RATING UPDATE] Completed rating updates")
+            print(f"[RATING UPDATE] Failed for model {model_id}: {e}")
 
 
 # -----------------------------

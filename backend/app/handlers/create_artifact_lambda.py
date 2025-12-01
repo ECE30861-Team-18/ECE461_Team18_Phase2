@@ -609,17 +609,12 @@ def recalculate_model_ratings(model_ids: list):
             model = model_result[0]
             metadata = json.loads(model.get('metadata', '{}'))
             
-            # Reconstruct URLData object for rating
-            url_data = URLData(
-                url=model['source_url'],
-                readme=metadata.get('readme', ''),
-                created_at=metadata.get('created_at'),
-                updated_at=metadata.get('updated_at')
-            )
+            # Add the model ID to metadata for metric calculation
+            metadata['id'] = model_id
             
-            # Calculate new rating
+            # Calculate new rating using MetricCalculator
             calculator = MetricCalculator()
-            rating = calculator.calculate_net_score(url_data)
+            rating = calculator.calculate_all_metrics(metadata, category="MODEL")
             
             # Update the rating in database
             run_query(
@@ -628,11 +623,11 @@ def recalculate_model_ratings(model_ids: list):
                 SET ratings = %s, net_score = %s
                 WHERE id = %s;
                 """,
-                (json.dumps(rating), rating.get('NetScore'), model_id),
+                (json.dumps(rating), rating.get('net_score'), model_id),
                 fetch=False
             )
             
-            print(f"[RATING UPDATE] Updated model {model_id}: NetScore = {rating.get('NetScore')}")
+            print(f"[RATING UPDATE] Updated model {model_id}: NetScore = {rating.get('net_score')}")
             
         except Exception as e:
             print(f"[RATING UPDATE] Failed for model {model_id}: {e}")

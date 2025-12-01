@@ -493,6 +493,10 @@ def find_and_link_to_models(artifact_id: int, artifact_type: str, artifact_name:
                         # Extract name from dict if needed
                         model_ds_name = model_ds.get('name', model_ds) if isinstance(model_ds, dict) else model_ds
                         
+                        # Skip if model_ds_name is None or empty
+                        if not model_ds_name:
+                            continue
+                        
                         if matches_identifier(code_ds, "", model_ds_name) or matches_identifier(model_ds_name, "", code_ds):
                             matched = True
                             dep_type = 'code_repository'

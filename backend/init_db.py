@@ -52,6 +52,8 @@ CREATE TABLE IF NOT EXISTS artifact_dependencies (
     id SERIAL PRIMARY KEY,
     model_id INTEGER NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
     artifact_id INTEGER NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+    model_name TEXT,
+    dependency_name TEXT,
     dependency_type TEXT NOT NULL,
     source TEXT DEFAULT 'auto_discovered',
     created_at TIMESTAMP DEFAULT NOW(),

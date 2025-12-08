@@ -466,7 +466,7 @@ def compute_dataset_link_score(metadata: dict, artifact_name: str, source_url: s
     max_score = 0.0
     for entry in candidates:
         name = ""
-        keywords = []
+        keywords: list[str] = []
         if isinstance(entry, dict):
             name = entry.get('name', '') or ''
             keywords = entry.get('keywords', []) or []
@@ -492,7 +492,7 @@ def compute_code_link_score(metadata: dict, artifact_name: str, source_url: str,
     max_code_repo_score = 0.0
     for entry in code_repos:
         expected_url = ""
-        keywords = []
+        keywords: list[str] = []
         if isinstance(entry, dict):
             expected_url = entry.get('url', '') or ''
             keywords = entry.get('keywords', []) or []

@@ -4,6 +4,7 @@ import difflib
 import re
 import boto3
 import traceback   # <<< LOGGING
+from string import Template
 
 from auth import require_auth
 from metric_calculator import MetricCalculator
@@ -114,7 +115,7 @@ def extract_artifact_dependencies(readme: str) -> dict:
     if github_urls:
         print(f"[DEPENDENCY] Found GitHub URLs: {github_urls}")
         print(f"[DEPENDENCY] Using LLM to add keywords for flexible matching")
-    prompt = f"""Analyze the following machine learning model README and extract dataset names and code repository references.
+    prompt_template = Template("""Analyze the following machine learning model README and extract dataset names and code repository references.
 
 Your goal is to output ONLY structured JSON describing:
 1. Datasets mentioned in the README
@@ -249,9 +250,10 @@ Only produce valid JSON.
 
 ============================================================
 README:
-{readme[:4000]}
+$readme_snippet
 ============================================================
-"""
+""")
+    prompt = prompt_template.substitute(readme_snippet=readme[:4000])
     
     try:
         response = bedrock_client.invoke_model(
@@ -383,7 +385,7 @@ def extract_dependencies_from_code_readme(readme: str) -> dict:
     if not readme or len(readme.strip()) < 50:
         return {"datasets": []}
     
-    prompt = f"""Analyze the following code repository README and extract ONLY the datasets explicitly mentioned.
+    prompt_template = Template("""Analyze the following code repository README and extract ONLY the datasets explicitly mentioned.
 
 ============================================================
                 EXTRACTION RULES (READ CAREFULLY)
@@ -450,9 +452,10 @@ Only return JSON.
 
 ============================================================
 README:
-{readme[:4000]}
+$readme_snippet
 ============================================================
-"""
+""")
+    prompt = prompt_template.substitute(readme_snippet=readme[:4000])
     
     try:
         response = bedrock_client.invoke_model(

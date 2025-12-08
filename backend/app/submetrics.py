@@ -36,20 +36,11 @@ class SizeMetric(Metric):
         
         # Hardware compatibility thresholds in GB 
         self.hardware_limits = {
-            "raspberry_pi": 2.0,
-            "jetson_nano": 4.0, 
-            "desktop_pc": 16.0,
-            "aws_server": 64.0
+            "raspberry_pi": 8.0,
+            "jetson_nano": 8.0, 
+            "desktop_pc": 32.0,
+            "aws_server": 128.0
         }
-
-        # Utilization factors tuned for realistic model deployment
-        # # Based on expected scoring patterns: smaller models score higher on all devices
-        # self.utilization_factors = {
-        #     "raspberry_pi": 0.5,      # 50% of 2GB = ~1.0GB usable for models
-        #     "jetson_nano": 0.7,       # 70% of 4GB = ~2.8GB usable
-        #     "desktop_pc": 0.8,        # 80% of 16GB = ~12.8GB usable  
-        #     "aws_server": 0.9         # 90% of 64GB = ~57.6GB usable
-        # }
     
     def calculate_metric(self, model_info: Dict[str, Any]) -> Dict[str, float]:
         """Calculate size scores for each hardware type"""
@@ -239,17 +230,13 @@ class RampUpMetric(Metric):
             
             score = 0.0
             
-            # Check for README quality (50% of score)
+            # Check for README quality (70% of score)
             readme_score = self._evaluate_readme(model_info.get("readme", ""))
-            score += readme_score * 0.5
+            score += readme_score * 0.7
             
-            # Check for clear model card/description (20% of score)
+            # Check for clear model card/description (30% of score)
             card_score = self._evaluate_model_card(model_info)
-            score += card_score * 0.2
-            
-            # Check for download/usage statistics (30% of score) 
-            popularity_score = self._evaluate_popularity(model_info)
-            score += popularity_score * 0.3
+            score += card_score * 0.3
             
             self._latency = int((time.time() - start_time) * 1000)
             return min(1.0, score)

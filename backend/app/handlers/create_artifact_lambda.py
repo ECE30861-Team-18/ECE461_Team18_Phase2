@@ -118,135 +118,106 @@ def extract_artifact_dependencies(readme: str) -> dict:
     prompt_template = Template("""Analyze the following machine learning model README and extract dataset names and code repository references.
 
 Your goal is to output ONLY structured JSON describing:
-1. Datasets mentioned in the README
-2. Code repositories mentioned in the README
+1. Datasets explicitly mentioned in the README
+2. Code repositories explicitly mentioned in the README
 3. Keywords that help identify these items (for downstream fuzzy matching)
 
 ============================================================
                 EXTRACTION RULES (READ CAREFULLY)
 ============================================================
 
-You MUST follow these rules:
+You MUST follow these rules strictly.
 
 -------------------------------------
 1. DATASET EXTRACTION RULES
 -------------------------------------
 
-Extract datasets ONLY from explicit text in the README.  
-Sources include:
+Extract datasets ONLY when they explicitly appear in the README text.
+Valid sources include:
 • YAML frontmatter (if present)
-• Sentences mentioning datasets
-• Tables, bullet lists, or citations explicitly identifying datasets
+• Any sentence that clearly refers to a dataset
+• Tables, bullet lists, citations, or metadata fields that explicitly identify a dataset
 
 Valid dataset signals include phrases such as:
-"trained on X", "fine-tuned on X", "evaluated on X", "uses X dataset".
+“trained on X”, “fine-tuned on X”, “evaluated on X”, “uses the X dataset”, etc.
 
-You MUST extract:
-• The raw dataset name AS IT APPEARS in the README.
-  Examples:
-    SQuAD → "squad"
-    ImageNet → "imagenet"
-    FairFace → "fair_face"
-    BookCorpus → "bookcorpus"
-    LERobot/Pusht → "lerobot/pusht"
-    Flickr2K → "flickr2k"
-    DIV2K → "div2k"
+You MUST:
+• Extract the dataset name EXACTLY as written in the README.
+• Preserve original punctuation such as slashes or underscores.
+• Not normalize or transform dataset names.
+• Not infer or guess dataset identifiers.
+• Not generate dataset names based on model names or author names.
 
-NEVER normalize the dataset name.  
-NEVER try to guess an HF dataset identifier.  
-NEVER output names like "rajpurkar-squad" or "imagenet-1k".
+You MUST generate dataset “keywords”:
+• Lowercase tokens derived from the dataset name.
+• Only include specific identifying tokens.
+• Do NOT include generic words like “dataset”, “data”, “train”, “evaluate”, etc.
 
-You MUST also generate dataset "keywords":
-• Simple lowercase tokens identifying the dataset.
-• Do NOT include generic terms like "dataset", "data", "train", "eval".
-
-Examples:
-Dataset name: "SQuAD"
-Keywords: ["squad"]
-
-Dataset name: "FairFace"
-Keywords: ["fairface"]
-
-Dataset name: "LERobot/Pusht"
-Keywords: ["lerobot", "pusht"]
-
+If the README does NOT distinguish training vs. eval datasets, place all extracted datasets into “training_datasets”.
+If no datasets are present, output empty lists for both training_datasets and eval_datasets.
 
 -------------------------------------
 2. CODE REPOSITORY EXTRACTION RULES
 -------------------------------------
 
-Identify GitHub repositories mentioned in the README.
+Identify GitHub repositories ONLY if they explicitly appear in the README.
 
-Valid signals include:
-• Explicit GitHub URLs
-• Hyperlinks in markdown
-• Text references like "see this repository: https://github.com/org/repo"
+Valid signals:
+• A literal GitHub URL
+• A markdown hyperlink containing a GitHub URL
+• A sentence referencing a GitHub repo with a visible URL
 
-Extract:
-• The FULL URL exactly as written.
-• Keywords that identify the repo (compact, non-generic).
+You MUST:
+• Extract the FULL URL exactly as shown.
+• Not modify the URL.
+• Not infer or guess missing URLs.
+• Not add URLs that do not appear in the README.
 
-GOOD KEYWORDS:
-• Repo name components
-• Author names
-• Unique model identifiers
+You MUST generate code repo “keywords”:
+• Lowercase, non-generic identifying tokens derived from the URL (e.g., organization or repo name).
+• Do NOT use generic words such as “code”, “repo”, “implementation”, “model”, “training”, etc.
 
-BAD KEYWORDS (DO NOT USE):
-"code", "implementation", "pytorch", "tensorflow", "model", "architecture", "repo", "training"
-
-Examples:
-URL: https://github.com/google-research/bert
-Keywords: ["google", "research", "bert"]
-
-URL: https://github.com/huggingface/lerobot
-Keywords: ["huggingface", "lerobot"]
-
+If no repos are present, output “code_repos: []”.
 
 -------------------------------------
 3. STRICT NON-HALLUCINATION POLICY
 -------------------------------------
 
 You MUST NOT:
-• Invent datasets not present in the README.
+• Invent datasets or URLs not present in the README.
+• Add datasets because the model name resembles a dataset.
+• Add code repos unless a GitHub URL is explicitly shown.
 • Infer normalized dataset names.
-• Infer GitHub repos, URLs, or keywords not present in the README.
-• Add URLs not explicitly provided.
-• Produce any descriptive text.
+• Output descriptive text of any kind.
 • Produce markdown formatting.
+• Copy patterns from common examples or known datasets.
 
-Only output clean JSON.
+If the README contains NO datasets and NO GitHub URLs, all lists MUST be empty.
 
 -------------------------------------
 4. OUTPUT SCHEMA (MANDATORY)
 -------------------------------------
 
-Return ONLY this JSON schema:
+Return ONLY this JSON structure:
 
 {
   "training_datasets": [
-    {"name": "...", "keywords": ["...", "..."]},
-    ...
+    {"name": "...", "keywords": ["...", "..."]}
   ],
   "eval_datasets": [
-    {"name": "...", "keywords": ["...", "..."]},
-    ...
+    {"name": "...", "keywords": ["...", "..."]}
   ],
   "code_repos": [
-    {"url": "https://github.com/.../...", "keywords": ["...", "..."]},
-    ...
+    {"url": "https://github.com/.../...", "keywords": ["...", "..."]}
   ]
 }
 
-NOTES:
-• If the README does NOT distinguish between training/eval datasets, put all datasets in "training_datasets".
-• If no datasets are found, output `training_datasets: []` and `eval_datasets: []`.
-• If no repos are found, output `code_repos: []`.
+No other fields are allowed.
 
 -------------------------------------
-5. DO NOT EXCEED THE JSON STRUCTURE
+5. NO EXPLANATIONS OR MARKDOWN
 -------------------------------------
-No explanations, no natural language, no markdown.  
-Only produce valid JSON.
+Produce ONLY valid JSON. No comments, no text, no notes.
 
 ============================================================
 README:
@@ -397,40 +368,39 @@ You MUST follow these rules:
 1. DATASET EXTRACTION
 -------------------------------------
 
-Extract dataset names ONLY when they appear explicitly in the README text.  
-Valid signals include:
+Extract dataset names ONLY when they explicitly appear in the README text.
+
+Valid signals include phrases such as:
 • "trained on X"
 • "we use X"
 • "evaluated on X"
 • "tested on X dataset"
 • "supports X"
+• Any direct text reference to a dataset name
 
-Extract the raw dataset name EXACTLY as written:
-Examples:
-DIV2K → "div2k"
-Flickr2K → "flickr2k"
-ImageNet → "imagenet"
-COCO → "coco"
-
-DO NOT:
-• Normalize dataset names.
-• Invent datasets not mentioned.
-• Guess HF dataset identifiers.
+You MUST:
+• Extract the dataset name EXACTLY as it appears in the README.
+• Preserve punctuation such as slashes or underscores.
+• Not normalize or transform the dataset name.
+• Not infer or guess dataset identifiers.
 
 -------------------------------------
 2. MULTIPLE DATASETS
 -------------------------------------
 
-If multiple datasets are mentioned, include all of them.
+If multiple datasets are mentioned explicitly, include all of them.
 
 -------------------------------------
 3. STRICT NON-HALLUCINATION POLICY
 -------------------------------------
 
-You MUST NOT add:
-• Datasets that are inferred but not stated
-• Datasets from external knowledge
-• Datasets not found explicitly in text
+You MUST NOT:
+• Add datasets that do not appear in the README.
+• Infer datasets based on context, model names, repo names, or common ML knowledge.
+• Generate dataset names from patterns or assumptions.
+• Return any dataset not literally present in the text.
+
+If the README does not mention any dataset, return an empty list.
 
 -------------------------------------
 4. OUTPUT SCHEMA (MANDATORY)
@@ -439,16 +409,18 @@ You MUST NOT add:
 Return ONLY this JSON structure:
 
 {
-  "datasets": ["dataset1", "dataset2", ...]
+  "datasets": ["dataset1", "dataset2"]
 }
 
-Where each dataset is a lowercase string.
+Where:
+• Each dataset is a lowercase string.
+• If no datasets are present, return `"datasets": []`.
 
 -------------------------------------
 5. NO EXPLANATIONS, NO MARKDOWN
 -------------------------------------
 
-Only return JSON.
+Only return valid JSON. No comments, no natural language, no markdown.
 
 ============================================================
 README:

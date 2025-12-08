@@ -446,8 +446,18 @@ def compute_identifier_score(artifact_name: str, source_url: str, expected: str)
         return 0.0
 
     score = 0.0
-    score = max(score, token_overlap_score(norm_artifact, norm_expected))
+    token_score = token_overlap_score(norm_artifact, norm_expected)
+    score = max(score, token_score)
     score = max(score, fuzzy_string_similarity(norm_artifact, norm_expected))
+
+    # Token subset boost: if all expected tokens appear in the artifact (or vice versa)
+    expected_tokens = set(norm_expected.split())
+    artifact_tokens = set(norm_artifact.split())
+    if expected_tokens and artifact_tokens:
+        if expected_tokens.issubset(artifact_tokens):
+            score = max(score, min(1.0, 0.85 + 0.05 * min(len(expected_tokens), 2)))
+        if artifact_tokens.issubset(expected_tokens):
+            score = max(score, min(1.0, 0.85 + 0.05 * min(len(artifact_tokens), 2)))
 
     # Small boosts for substring containment
     if norm_expected in norm_artifact and len(norm_expected) >= 3:

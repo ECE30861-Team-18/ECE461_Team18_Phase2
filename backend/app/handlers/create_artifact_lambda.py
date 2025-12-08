@@ -248,7 +248,16 @@ $readme_snippet
         if content.endswith('```'):
             content = content.rsplit('\n', 1)[0] if '\n' in content else content[:-3]
         
-        extracted = json.loads(content)
+        try:
+            extracted = json.loads(content)
+        except Exception:
+            print("[DEPENDENCY] LLM returned invalid JSON, falling back to empty dependencies")
+            extracted = {
+                "training_datasets": [],
+                "eval_datasets": [],
+                "code_repos": []
+            }
+
         print(f"[DEPENDENCY] LLM extracted: {extracted}")
         
         # Normalize LLM output to include keywords
@@ -450,7 +459,16 @@ $readme_snippet
         if content.endswith('```'):
             content = content.rsplit('\n', 1)[0] if '\n' in content else content[:-3]
         
-        extracted = json.loads(content)
+        try:
+            extracted = json.loads(content)
+        except Exception:
+            print("[DEPENDENCY] LLM returned invalid JSON, falling back to empty dependencies")
+            extracted = {
+                "training_datasets": [],
+                "eval_datasets": [],
+                "code_repos": []
+            }
+
         print(f"[DEPENDENCY] Code repo datasets: {extracted}")
         return extracted
         
@@ -744,7 +762,17 @@ def find_and_link_to_models(artifact_id: int, artifact_type: str, artifact_name:
             except:
                 continue
 
-        dependencies = metadata.get('expected_dependencies', {}) if isinstance(metadata, dict) else {}
+        raw_deps = metadata.get('expected_dependencies', {})
+
+        # If stored as JSON string, decode it
+        if isinstance(raw_deps, str):
+            try:
+                raw_deps = json.loads(raw_deps)
+            except:
+                raw_deps = {}
+
+        dependencies = raw_deps if isinstance(raw_deps, dict) else {}
+
         if artifact_type == "dataset":
             if not dependencies:
                 continue

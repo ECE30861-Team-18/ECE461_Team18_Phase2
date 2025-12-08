@@ -9,6 +9,13 @@ S3_BUCKET = os.environ.get("S3_BUCKET")
 def lambda_handler(event, context):
     """Delete an artifact by its ID and type from the database."""
 
+    #disable for now
+    return {
+        "statusCode": 501,
+        "headers": {"Content-Type": "application/json"},
+        "body": json.dumps({"error": "Artifact deletion is currently disabled"})
+    }
+
     token = event["headers"].get("x-authorization")
     print("Incoming event:", json.dumps(event, indent=2))
 

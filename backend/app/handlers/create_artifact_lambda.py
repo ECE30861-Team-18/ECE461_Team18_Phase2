@@ -582,6 +582,9 @@ def find_and_link_to_models(artifact_id: int, artifact_type: str, artifact_name:
     links_created = 0
     linked_model_ids = []  # Track which models got linked for cascading
     linked_models_info = []  # Preserve names for cascade inserts
+
+    # For code repos we only allow linking to a single model (best match)
+    best_code_match = None  # (score, model_dict, dependency_type)
     
     # For code repos: extract datasets mentioned in code README
     code_datasets = []
@@ -612,6 +615,33 @@ def find_and_link_to_models(artifact_id: int, artifact_type: str, artifact_name:
                 continue
             dep_type = 'dataset'
             matched_score = score
+
+            enforce_limit = dep_type in DEPENDENCY_CAP_TYPES and model.get('id') is not None
+            if enforce_limit:
+                existing_types = dependency_state.setdefault(model['id'], set())
+                if dep_type in existing_types:
+                    print(f"[DEPENDENCY] Model {model['id']} already has a {dep_type}; skipping new link")
+                    continue
+            try:
+                run_query(
+                    """
+                    INSERT INTO artifact_dependencies 
+                    (model_id, artifact_id, model_name, dependency_name, dependency_type, source)
+                    VALUES (%s, %s, %s, %s, %s, 'auto_discovered')
+                    ON CONFLICT DO NOTHING;
+                    """,
+                    (model['id'], artifact_id, model.get('name'), artifact_name, dep_type),
+                    fetch=False
+                )
+                links_created += 1
+                linked_model_ids.append(model['id'])
+                linked_models_info.append({"id": model['id'], "name": model.get('name')})
+                if enforce_limit:
+                    dependency_state[model['id']].add(dep_type)
+                print(f"[DEPENDENCY] Linked {artifact_name} -> model {model['id']} as {dep_type} (score={matched_score:.3f})")
+            except Exception as e:
+                print(f"[DEPENDENCY] Failed to link: {e}")
+
         elif artifact_type == "code":
             if not dependencies and not code_datasets:
                 continue
@@ -620,15 +650,26 @@ def find_and_link_to_models(artifact_id: int, artifact_type: str, artifact_name:
                 continue
             dep_type = 'code'
             matched_score = score
+
+            enforce_limit = dep_type in DEPENDENCY_CAP_TYPES and model.get('id') is not None
+            if enforce_limit:
+                existing_types = dependency_state.setdefault(model['id'], set())
+                if dep_type in existing_types:
+                    print(f"[DEPENDENCY] Model {model['id']} already has a {dep_type}; skipping new link")
+                    continue
+
+            # Select the best single model for this code repo
+            if best_code_match is None or matched_score > best_code_match[0]:
+                best_code_match = (matched_score, model, dep_type)
+
         else:
             continue
-
-        enforce_limit = dep_type in DEPENDENCY_CAP_TYPES and model.get('id') is not None
-        if enforce_limit:
-            existing_types = dependency_state.setdefault(model['id'], set())
-            if dep_type in existing_types:
-                print(f"[DEPENDENCY] Model {model['id']} already has a {dep_type}; skipping new link")
-                continue
+    
+    print(f"[DEPENDENCY] Created {links_created} links for '{artifact_name}'")
+    
+    # If code artifact, link only the single best match (exclusive to one model)
+    if artifact_type == "code" and best_code_match is not None:
+        matched_score, model, dep_type = best_code_match
         try:
             run_query(
                 """
@@ -643,18 +684,18 @@ def find_and_link_to_models(artifact_id: int, artifact_type: str, artifact_name:
             links_created += 1
             linked_model_ids.append(model['id'])
             linked_models_info.append({"id": model['id'], "name": model.get('name')})
-            if enforce_limit:
-                dependency_state[model['id']].add(dep_type)
-            print(f"[DEPENDENCY] Linked {artifact_name} -> model {model['id']} as {dep_type} (score={matched_score:.3f})")
+            if dep_type in DEPENDENCY_CAP_TYPES:
+                dependency_state.setdefault(model['id'], set()).add(dep_type)
+            print(f"[DEPENDENCY] Linked {artifact_name} -> model {model['id']} as {dep_type} (score={matched_score:.3f}) [exclusive]")
         except Exception as e:
-            print(f"[DEPENDENCY] Failed to link: {e}")
-    
+            print(f"[DEPENDENCY] Failed to link exclusive code: {e}")
+
     print(f"[DEPENDENCY] Created {links_created} links for '{artifact_name}'")
-    
+
     # Recalculate ratings for models that got new dependencies
     if linked_model_ids:
         recalculate_model_ratings(linked_model_ids)
-    
+
     # CASCADE: If code repo linked to models, link datasets from code README to same models
     if artifact_type == "code" and linked_models_info and code_datasets:
         cascade_dataset_links(linked_models_info, code_datasets, dependency_state)

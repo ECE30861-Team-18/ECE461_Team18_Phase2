@@ -114,35 +114,143 @@ def extract_artifact_dependencies(readme: str) -> dict:
     if github_urls:
         print(f"[DEPENDENCY] Found GitHub URLs: {github_urls}")
         print(f"[DEPENDENCY] Using LLM to add keywords for flexible matching")
-    prompt = f"""Analyze this machine learning model README and extract information about datasets and code repositories.
+    prompt = f"""Analyze the following machine learning model README and extract dataset names and code repository references.
 
-For datasets, extract:
-1. Exact dataset names mentioned (e.g., "ImageNet", "COCO", "SQuAD", "Flickr2K", "DIV2K")
-2. Keywords that would identify the dataset (e.g., for "ImageNet" -> ["imagenet", "ilsvrc"])
+Your goal is to output ONLY structured JSON describing:
+1. Datasets mentioned in the README
+2. Code repositories mentioned in the README
+3. Keywords that help identify these items (for downstream fuzzy matching)
 
-For code repositories:
-1. Full GitHub URLs (https://github.com/org/repo) - if mentioned
-2. Keywords for associated code repositories
-   - Use SPECIFIC, UNIQUE terms (e.g., "deep-residual-networks", "kaiming-he", "google-bert")
-   - DO NOT use generic/common terms: "implementation", "code", "pytorch", "tensorflow", "training", "model", "network", "architecture"
-   - Prefer author names + model names, or unique repository identifiers
-   - Maximum 2-3 keywords per repo to keep them distinctive
+============================================================
+                EXTRACTION RULES (READ CAREFULLY)
+============================================================
 
-Return ONLY valid JSON (no markdown):
-{{
+You MUST follow these rules:
+
+-------------------------------------
+1. DATASET EXTRACTION RULES
+-------------------------------------
+
+Extract datasets ONLY from explicit text in the README.  
+Sources include:
+• YAML frontmatter (if present)
+• Sentences mentioning datasets
+• Tables, bullet lists, or citations explicitly identifying datasets
+
+Valid dataset signals include phrases such as:
+"trained on X", "fine-tuned on X", "evaluated on X", "uses X dataset".
+
+You MUST extract:
+• The raw dataset name AS IT APPEARS in the README.
+  Examples:
+    SQuAD → "squad"
+    ImageNet → "imagenet"
+    FairFace → "fair_face"
+    BookCorpus → "bookcorpus"
+    LERobot/Pusht → "lerobot/pusht"
+    Flickr2K → "flickr2k"
+    DIV2K → "div2k"
+
+NEVER normalize the dataset name.  
+NEVER try to guess an HF dataset identifier.  
+NEVER output names like "rajpurkar-squad" or "imagenet-1k".
+
+You MUST also generate dataset "keywords":
+• Simple lowercase tokens identifying the dataset.
+• Do NOT include generic terms like "dataset", "data", "train", "eval".
+
+Examples:
+Dataset name: "SQuAD"
+Keywords: ["squad"]
+
+Dataset name: "FairFace"
+Keywords: ["fairface"]
+
+Dataset name: "LERobot/Pusht"
+Keywords: ["lerobot", "pusht"]
+
+
+-------------------------------------
+2. CODE REPOSITORY EXTRACTION RULES
+-------------------------------------
+
+Identify GitHub repositories mentioned in the README.
+
+Valid signals include:
+• Explicit GitHub URLs
+• Hyperlinks in markdown
+• Text references like "see this repository: https://github.com/org/repo"
+
+Extract:
+• The FULL URL exactly as written.
+• Keywords that identify the repo (compact, non-generic).
+
+GOOD KEYWORDS:
+• Repo name components
+• Author names
+• Unique model identifiers
+
+BAD KEYWORDS (DO NOT USE):
+"code", "implementation", "pytorch", "tensorflow", "model", "architecture", "repo", "training"
+
+Examples:
+URL: https://github.com/google-research/bert
+Keywords: ["google", "research", "bert"]
+
+URL: https://github.com/huggingface/lerobot
+Keywords: ["huggingface", "lerobot"]
+
+
+-------------------------------------
+3. STRICT NON-HALLUCINATION POLICY
+-------------------------------------
+
+You MUST NOT:
+• Invent datasets not present in the README.
+• Infer normalized dataset names.
+• Infer GitHub repos, URLs, or keywords not present in the README.
+• Add URLs not explicitly provided.
+• Produce any descriptive text.
+• Produce markdown formatting.
+
+Only output clean JSON.
+
+-------------------------------------
+4. OUTPUT SCHEMA (MANDATORY)
+-------------------------------------
+
+Return ONLY this JSON schema:
+
+{
   "training_datasets": [
-    {{"name": "exact name", "keywords": ["identifying", "terms"]}}
+    {"name": "...", "keywords": ["...", "..."]},
+    ...
   ],
   "eval_datasets": [
-    {{"name": "exact name", "keywords": ["identifying", "terms"]}}
+    {"name": "...", "keywords": ["...", "..."]},
+    ...
   ],
   "code_repos": [
-    {{"url": "https://github.com/org/repo", "keywords": ["specific-unique-terms"]}}
+    {"url": "https://github.com/.../...", "keywords": ["...", "..."]},
+    ...
   ]
-}}
+}
 
+NOTES:
+• If the README does NOT distinguish between training/eval datasets, put all datasets in "training_datasets".
+• If no datasets are found, output `training_datasets: []` and `eval_datasets: []`.
+• If no repos are found, output `code_repos: []`.
+
+-------------------------------------
+5. DO NOT EXCEED THE JSON STRUCTURE
+-------------------------------------
+No explanations, no natural language, no markdown.  
+Only produce valid JSON.
+
+============================================================
 README:
 {readme[:4000]}
+============================================================
 """
     
     try:
@@ -275,20 +383,75 @@ def extract_dependencies_from_code_readme(readme: str) -> dict:
     if not readme or len(readme.strip()) < 50:
         return {"datasets": []}
     
-    prompt = f"""Analyze this code repository README and extract dataset names mentioned.
+    prompt = f"""Analyze the following code repository README and extract ONLY the datasets explicitly mentioned.
 
-Look for datasets used for training, testing, or evaluation.
-Common patterns: "trained on X", "uses Y dataset", "tested on Z"
+============================================================
+                EXTRACTION RULES (READ CAREFULLY)
+============================================================
 
-Common dataset names: ImageNet, COCO, SQuAD, DIV2K, Flickr2K, BookCorpus, WikiText, etc.
+You MUST follow these rules:
 
-Return ONLY valid JSON (no markdown):
-{{
-  "datasets": ["exact dataset name"]
-}}
+-------------------------------------
+1. DATASET EXTRACTION
+-------------------------------------
 
+Extract dataset names ONLY when they appear explicitly in the README text.  
+Valid signals include:
+• "trained on X"
+• "we use X"
+• "evaluated on X"
+• "tested on X dataset"
+• "supports X"
+
+Extract the raw dataset name EXACTLY as written:
+Examples:
+DIV2K → "div2k"
+Flickr2K → "flickr2k"
+ImageNet → "imagenet"
+COCO → "coco"
+
+DO NOT:
+• Normalize dataset names.
+• Invent datasets not mentioned.
+• Guess HF dataset identifiers.
+
+-------------------------------------
+2. MULTIPLE DATASETS
+-------------------------------------
+
+If multiple datasets are mentioned, include all of them.
+
+-------------------------------------
+3. STRICT NON-HALLUCINATION POLICY
+-------------------------------------
+
+You MUST NOT add:
+• Datasets that are inferred but not stated
+• Datasets from external knowledge
+• Datasets not found explicitly in text
+
+-------------------------------------
+4. OUTPUT SCHEMA (MANDATORY)
+-------------------------------------
+
+Return ONLY this JSON structure:
+
+{
+  "datasets": ["dataset1", "dataset2", ...]
+}
+
+Where each dataset is a lowercase string.
+
+-------------------------------------
+5. NO EXPLANATIONS, NO MARKDOWN
+-------------------------------------
+
+Only return JSON.
+
+============================================================
 README:
 {readme[:4000]}
+============================================================
 """
     
     try:

@@ -1,5 +1,7 @@
 import json
 import os
+import difflib
+import re
 import boto3
 import traceback   # <<< LOGGING
 
@@ -16,6 +18,8 @@ S3_BUCKET = os.environ.get("S3_BUCKET")
 sqs_client = boto3.client("sqs")
 bedrock_client = boto3.client("bedrock-runtime", region_name="us-east-1")
 DEPENDENCY_CAP_TYPES = ("dataset", "code")
+DATASET_LINK_THRESHOLD = 0.75
+CODE_LINK_THRESHOLD = 0.75
 
 # -----------------------------
 # DATASET/CODE DEPENDENCY EXTRACTION (SEPARATE FROM LINEAGE)
@@ -392,6 +396,131 @@ def matches_identifier(artifact_name: str, source_url: str, expected: str) -> bo
     return False
 
 
+def normalize_identifier(text: str) -> str:
+    """Normalize identifiers for comparison."""
+    if not text:
+        return ""
+    cleaned = text.lower().strip()
+    cleaned = cleaned.strip(".,;:/\\()[]{}\"'")
+    cleaned = re.sub(r'[_-]+', ' ', cleaned)
+    cleaned = re.sub(r'\s+', ' ', cleaned)
+    return cleaned.strip()
+
+
+def token_overlap_score(a: str, b: str) -> float:
+    """Compute Jaccard similarity on tokens."""
+    norm_a = normalize_identifier(a)
+    norm_b = normalize_identifier(b)
+    if not norm_a or not norm_b:
+        return 0.0
+    tokens_a = set(norm_a.split())
+    tokens_b = set(norm_b.split())
+    if not tokens_a or not tokens_b:
+        return 0.0
+    intersection = tokens_a & tokens_b
+    union = tokens_a | tokens_b
+    return len(intersection) / len(union) if union else 0.0
+
+
+def fuzzy_string_similarity(a: str, b: str) -> float:
+    """Fuzzy similarity using SequenceMatcher."""
+    norm_a = normalize_identifier(a)
+    norm_b = normalize_identifier(b)
+    if not norm_a or not norm_b:
+        return 0.0
+    return difflib.SequenceMatcher(None, norm_a, norm_b).ratio()
+
+
+def compute_identifier_score(artifact_name: str, source_url: str, expected: str) -> float:
+    """Combine strict match with fuzzy/token similarity into a score."""
+    if not expected:
+        return 0.0
+
+    # Strong signal if strict matcher succeeds
+    if matches_identifier(artifact_name, source_url, expected):
+        return 1.0
+
+    norm_artifact = normalize_identifier(artifact_name)
+    norm_expected = normalize_identifier(expected)
+    if not norm_artifact or not norm_expected:
+        return 0.0
+
+    score = 0.0
+    score = max(score, token_overlap_score(norm_artifact, norm_expected))
+    score = max(score, fuzzy_string_similarity(norm_artifact, norm_expected))
+
+    # Small boosts for substring containment
+    if norm_expected in norm_artifact and len(norm_expected) >= 3:
+        score = max(score, 0.8 * (len(norm_expected) / max(len(norm_artifact), 1)))
+    if norm_artifact in norm_expected and len(norm_artifact) >= 3:
+        score = max(score, 0.8 * (len(norm_artifact) / max(len(norm_expected), 1)))
+
+    return max(0.0, min(1.0, score))
+
+
+def compute_dataset_link_score(metadata: dict, artifact_name: str, source_url: str) -> float:
+    """Score how well a dataset matches a model's expected datasets."""
+    deps = metadata.get('expected_dependencies', {}) if isinstance(metadata, dict) else {}
+    candidates = deps.get('training_datasets', []) + deps.get('eval_datasets', [])
+
+    max_score = 0.0
+    for entry in candidates:
+        name = ""
+        keywords = []
+        if isinstance(entry, dict):
+            name = entry.get('name', '') or ''
+            keywords = entry.get('keywords', []) or []
+        else:
+            name = entry
+
+        for candidate in [name] + list(keywords):
+            if not candidate:
+                continue
+            score = compute_identifier_score(artifact_name, source_url, candidate)
+            if score > max_score:
+                max_score = score
+
+    return max_score
+
+
+def compute_code_link_score(metadata: dict, artifact_name: str, source_url: str, code_datasets: list) -> float:
+    """Score how well a code repo matches a model's expected code repos or datasets."""
+    deps = metadata.get('expected_dependencies', {}) if isinstance(metadata, dict) else {}
+    code_repos = deps.get('code_repos', [])
+    model_datasets = deps.get('training_datasets', []) + deps.get('eval_datasets', [])
+
+    max_code_repo_score = 0.0
+    for entry in code_repos:
+        expected_url = ""
+        keywords = []
+        if isinstance(entry, dict):
+            expected_url = entry.get('url', '') or ''
+            keywords = entry.get('keywords', []) or []
+        else:
+            expected_url = entry
+
+        for candidate in [expected_url] + list(keywords):
+            if not candidate:
+                continue
+            score = compute_identifier_score(artifact_name, source_url, candidate)
+            if score > max_code_repo_score:
+                max_code_repo_score = score
+
+    max_code_dataset_score = 0.0
+    for code_ds in code_datasets or []:
+        if not code_ds:
+            continue
+        for model_ds in model_datasets:
+            model_ds_name = model_ds.get('name') if isinstance(model_ds, dict) else model_ds
+            if not model_ds_name:
+                continue
+            score = compute_identifier_score(code_ds, "", model_ds_name)
+            if score > max_code_dataset_score:
+                max_code_dataset_score = score
+
+    return max(max_code_repo_score, max_code_dataset_score)
+
+
 def load_dependency_state(model_ids, dependency_types):
     """Return a map of model_id -> dependency types already linked."""
     state = {}
@@ -463,145 +592,52 @@ def find_and_link_to_models(artifact_id: int, artifact_type: str, artifact_name:
                 metadata = json.loads(metadata)
             except:
                 continue
-        
-        dependencies = metadata.get('expected_dependencies', {})
-        if not dependencies and not code_datasets:
-            continue
-        
-        matched = False
-        dep_type = 'related_to'
-        
+
+        dependencies = metadata.get('expected_dependencies', {}) if isinstance(metadata, dict) else {}
         if artifact_type == "dataset":
-            # Match dataset directly
-            for expected in dependencies.get('training_datasets', []):
-                # Handle both old format (string) and new format (dict with keywords)
-                if isinstance(expected, dict):
-                    expected_name = expected.get('name', '')
-                    expected_keywords = expected.get('keywords', [])
-                    
-                    # Try matching name
-                    if matches_identifier(artifact_name, source_url, expected_name):
-                        matched = True
-                        dep_type = 'dataset'
-                        break
-                    
-                    # Try matching keywords
-                    for keyword in expected_keywords:
-                        if matches_identifier(artifact_name, source_url, keyword):
-                            matched = True
-                            dep_type = 'dataset'
-                            print(f"[DEPENDENCY] Matched via keyword: {keyword}")
-                            break
-                    if matched:
-                        break
-                else:
-                    # Old format - simple string
-                    if matches_identifier(artifact_name, source_url, expected):
-                        matched = True
-                        dep_type = 'dataset'
-                        break
-            
-            if not matched:
-                for expected in dependencies.get('eval_datasets', []):
-                    if isinstance(expected, dict):
-                        expected_name = expected.get('name', '')
-                        expected_keywords = expected.get('keywords', [])
-                        
-                        if matches_identifier(artifact_name, source_url, expected_name):
-                            matched = True
-                            dep_type = 'dataset'
-                            break
-                        
-                        for keyword in expected_keywords:
-                            if matches_identifier(artifact_name, source_url, keyword):
-                                matched = True
-                                dep_type = 'dataset'
-                                print(f"[DEPENDENCY] Matched via keyword: {keyword}")
-                                break
-                        if matched:
-                            break
-                    else:
-                        if matches_identifier(artifact_name, source_url, expected):
-                            matched = True
-                            dep_type = 'dataset'
-                            break
-        
+            if not dependencies:
+                continue
+            score = compute_dataset_link_score(metadata, artifact_name, source_url)
+            if score < DATASET_LINK_THRESHOLD:
+                continue
+            dep_type = 'dataset'
+            matched_score = score
         elif artifact_type == "code":
-            # Match code repo directly via expected_dependencies
-            for expected in dependencies.get('code_repos', []):
-                # Handle both old format (string URL) and new format (dict with keywords)
-                if isinstance(expected, dict):
-                    expected_url = expected.get('url', '')
-                    expected_keywords = expected.get('keywords', [])
-                    
-                    # Try matching URL
-                    if matches_identifier(artifact_name, source_url, expected_url):
-                        matched = True
-                        dep_type = 'code'
-                        break
-                    
-                    # Try matching keywords
-                    for keyword in expected_keywords:
-                        if matches_identifier(artifact_name, source_url, keyword):
-                            matched = True
-                            dep_type = 'code'
-                            print(f"[DEPENDENCY] Matched via keyword: {keyword}")
-                            break
-                    if matched:
-                        break
-                else:
-                    # Old format - simple string
-                    if matches_identifier(artifact_name, source_url, expected):
-                        matched = True
-                        dep_type = 'code'
-                        break
-            
-            # Also match if code repo mentions datasets that the model uses
-            if not matched and code_datasets:
-                model_datasets = dependencies.get('training_datasets', []) + dependencies.get('eval_datasets', [])
-                for code_ds in code_datasets:
-                    for model_ds in model_datasets:
-                        # Extract name from dict if needed
-                        model_ds_name = model_ds.get('name', model_ds) if isinstance(model_ds, dict) else model_ds
-                        
-                        # Skip if model_ds_name is None or empty
-                        if not model_ds_name:
-                            continue
-                        
-                        if matches_identifier(code_ds, "", model_ds_name) or matches_identifier(model_ds_name, "", code_ds):
-                            matched = True
-                            dep_type = 'code'
-                            print(f"[DEPENDENCY] Code repo matched via dataset: {code_ds} ~ {model_ds_name}")
-                            break
-                    if matched:
-                        break
-        
-        if matched:
-            enforce_limit = dep_type in DEPENDENCY_CAP_TYPES and model.get('id') is not None
+            if not dependencies and not code_datasets:
+                continue
+            score = compute_code_link_score(metadata, artifact_name, source_url, code_datasets)
+            if score < CODE_LINK_THRESHOLD:
+                continue
+            dep_type = 'code'
+            matched_score = score
+        else:
+            continue
+
+        enforce_limit = dep_type in DEPENDENCY_CAP_TYPES and model.get('id') is not None
+        if enforce_limit:
+            existing_types = dependency_state.setdefault(model['id'], set())
+            if dep_type in existing_types:
+                print(f"[DEPENDENCY] Model {model['id']} already has a {dep_type}; skipping new link")
+                continue
+        try:
+            run_query(
+                """
+                INSERT INTO artifact_dependencies 
+                (model_id, artifact_id, model_name, dependency_name, dependency_type, source)
+                VALUES (%s, %s, %s, %s, %s, 'auto_discovered')
+                ON CONFLICT DO NOTHING;
+                """,
+                (model['id'], artifact_id, model.get('name'), artifact_name, dep_type),
+                fetch=False
+            )
+            links_created += 1
+            linked_model_ids.append(model['id'])
+            linked_models_info.append({"id": model['id'], "name": model.get('name')})
             if enforce_limit:
-                existing_types = dependency_state.setdefault(model['id'], set())
-                if dep_type in existing_types:
-                    print(f"[DEPENDENCY] Model {model['id']} already has a {dep_type}; skipping new link")
-                    continue
-            try:
-                run_query(
-                    """
-                    INSERT INTO artifact_dependencies 
-                    (model_id, artifact_id, model_name, dependency_name, dependency_type, source)
-                    VALUES (%s, %s, %s, %s, %s, 'auto_discovered')
-                    ON CONFLICT DO NOTHING;
-                    """,
-                    (model['id'], artifact_id, model.get('name'), artifact_name, dep_type),
-                    fetch=False
-                )
-                links_created += 1
-                linked_model_ids.append(model['id'])
-                linked_models_info.append({"id": model['id'], "name": model.get('name')})
-                if enforce_limit:
-                    dependency_state[model['id']].add(dep_type)
-                print(f"[DEPENDENCY] Linked {artifact_name} -> model {model['id']} as {dep_type}")
-            except Exception as e:
-                print(f"[DEPENDENCY] Failed to link: {e}")
+                dependency_state[model['id']].add(dep_type)
+            print(f"[DEPENDENCY] Linked {artifact_name} -> model {model['id']} as {dep_type} (score={matched_score:.3f})")
+        except Exception as e:
+            print(f"[DEPENDENCY] Failed to link: {e}")
     
     print(f"[DEPENDENCY] Created {links_created} links for '{artifact_name}'")
     
@@ -648,7 +684,8 @@ def cascade_dataset_links(models: list, dataset_names: list, dependency_state=No
         
         # Check if this dataset matches any dataset mentioned in code README
         for mentioned_ds in dataset_names:
-            if matches_identifier(dataset_name, dataset_url, mentioned_ds):
+            score = compute_identifier_score(dataset_name, dataset_url, mentioned_ds)
+            if score >= DATASET_LINK_THRESHOLD:
                 # Link this dataset to all models that the code repo is linked to
                 for model_info in models:
                     model_id = model_info.get('id')
@@ -678,7 +715,7 @@ def cascade_dataset_links(models: list, dataset_names: list, dependency_state=No
                         links_created += 1
                         if model_id is not None:
                             dependency_state.setdefault(model_id, set()).add(dependency_type)
-                        print(f"[DEPENDENCY CASCADE] Linked dataset {dataset_name} -> model {model_id}")
+                        print(f"[DEPENDENCY CASCADE] Linked dataset {dataset_name} -> model {model_id} (score={score:.3f})")
                     except Exception as e:
                         print(f"[DEPENDENCY CASCADE] Failed: {e}")
                 break

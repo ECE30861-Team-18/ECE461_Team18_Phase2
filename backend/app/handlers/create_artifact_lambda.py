@@ -15,6 +15,7 @@ from rds_connection import run_query
 S3_BUCKET = os.environ.get("S3_BUCKET")
 sqs_client = boto3.client("sqs")
 bedrock_client = boto3.client("bedrock-runtime", region_name="us-east-1")
+DEPENDENCY_CAP_TYPES = ("dataset", "code")
 
 # -----------------------------
 # DATASET/CODE DEPENDENCY EXTRACTION (SEPARATE FROM LINEAGE)
@@ -391,6 +392,38 @@ def matches_identifier(artifact_name: str, source_url: str, expected: str) -> bo
     return False
 
 
+def load_dependency_state(model_ids, dependency_types):
+    """Return a map of model_id -> dependency types already linked."""
+    state = {}
+    if not model_ids or not dependency_types:
+        return state
+
+    placeholders_ids = ', '.join(['%s'] * len(model_ids))
+    placeholders_types = ', '.join(['%s'] * len(dependency_types))
+    query = f"""
+        SELECT model_id, dependency_type
+        FROM artifact_dependencies
+        WHERE model_id IN ({placeholders_ids})
+          AND dependency_type IN ({placeholders_types});
+    """
+    params = tuple(model_ids) + tuple(dependency_types)
+
+    try:
+        rows = run_query(query, params, fetch=True)
+    except Exception as e:
+        print(f"[DEPENDENCY] Failed to load dependency state: {e}")
+        return state
+
+    for row in rows or []:
+        model_id = row.get('model_id')
+        dep_type = row.get('dependency_type')
+        if model_id is None or not dep_type:
+            continue
+        state.setdefault(model_id, set()).add(dep_type)
+
+    return state
+
+
 def find_and_link_to_models(artifact_id: int, artifact_type: str, artifact_name: str, source_url: str, readme: str = ""):
     """
     When dataset/code is ingested, find models expecting it and create dependencies.
@@ -418,6 +451,11 @@ def find_and_link_to_models(artifact_id: int, artifact_type: str, artifact_name:
         code_datasets = extracted.get('datasets', [])
         print(f"[DEPENDENCY] Code repo mentions datasets: {code_datasets}")
     
+    model_ids = [m.get('id') for m in models if m.get('id') is not None]
+    dependency_state = load_dependency_state(model_ids, DEPENDENCY_CAP_TYPES)
+    for model_id in model_ids:
+        dependency_state.setdefault(model_id, set())
+
     for model in models:
         metadata = model.get('metadata', {})
         if isinstance(metadata, str):
@@ -444,14 +482,14 @@ def find_and_link_to_models(artifact_id: int, artifact_type: str, artifact_name:
                     # Try matching name
                     if matches_identifier(artifact_name, source_url, expected_name):
                         matched = True
-                        dep_type = 'training_dataset'
+                        dep_type = 'dataset'
                         break
                     
                     # Try matching keywords
                     for keyword in expected_keywords:
                         if matches_identifier(artifact_name, source_url, keyword):
                             matched = True
-                            dep_type = 'training_dataset'
+                            dep_type = 'dataset'
                             print(f"[DEPENDENCY] Matched via keyword: {keyword}")
                             break
                     if matched:
@@ -460,7 +498,7 @@ def find_and_link_to_models(artifact_id: int, artifact_type: str, artifact_name:
                     # Old format - simple string
                     if matches_identifier(artifact_name, source_url, expected):
                         matched = True
-                        dep_type = 'training_dataset'
+                        dep_type = 'dataset'
                         break
             
             if not matched:
@@ -471,13 +509,13 @@ def find_and_link_to_models(artifact_id: int, artifact_type: str, artifact_name:
                         
                         if matches_identifier(artifact_name, source_url, expected_name):
                             matched = True
-                            dep_type = 'evaluation_dataset'
+                            dep_type = 'dataset'
                             break
                         
                         for keyword in expected_keywords:
                             if matches_identifier(artifact_name, source_url, keyword):
                                 matched = True
-                                dep_type = 'evaluation_dataset'
+                                dep_type = 'dataset'
                                 print(f"[DEPENDENCY] Matched via keyword: {keyword}")
                                 break
                         if matched:
@@ -485,7 +523,7 @@ def find_and_link_to_models(artifact_id: int, artifact_type: str, artifact_name:
                     else:
                         if matches_identifier(artifact_name, source_url, expected):
                             matched = True
-                            dep_type = 'evaluation_dataset'
+                            dep_type = 'dataset'
                             break
         
         elif artifact_type == "code":
@@ -499,14 +537,14 @@ def find_and_link_to_models(artifact_id: int, artifact_type: str, artifact_name:
                     # Try matching URL
                     if matches_identifier(artifact_name, source_url, expected_url):
                         matched = True
-                        dep_type = 'code_repository'
+                        dep_type = 'code'
                         break
                     
                     # Try matching keywords
                     for keyword in expected_keywords:
                         if matches_identifier(artifact_name, source_url, keyword):
                             matched = True
-                            dep_type = 'code_repository'
+                            dep_type = 'code'
                             print(f"[DEPENDENCY] Matched via keyword: {keyword}")
                             break
                     if matched:
@@ -515,7 +553,7 @@ def find_and_link_to_models(artifact_id: int, artifact_type: str, artifact_name:
                     # Old format - simple string
                     if matches_identifier(artifact_name, source_url, expected):
                         matched = True
-                        dep_type = 'code_repository'
+                        dep_type = 'code'
                         break
             
             # Also match if code repo mentions datasets that the model uses
@@ -532,13 +570,19 @@ def find_and_link_to_models(artifact_id: int, artifact_type: str, artifact_name:
                         
                         if matches_identifier(code_ds, "", model_ds_name) or matches_identifier(model_ds_name, "", code_ds):
                             matched = True
-                            dep_type = 'code_repository'
+                            dep_type = 'code'
                             print(f"[DEPENDENCY] Code repo matched via dataset: {code_ds} ~ {model_ds_name}")
                             break
                     if matched:
                         break
         
         if matched:
+            enforce_limit = dep_type in DEPENDENCY_CAP_TYPES and model.get('id') is not None
+            if enforce_limit:
+                existing_types = dependency_state.setdefault(model['id'], set())
+                if dep_type in existing_types:
+                    print(f"[DEPENDENCY] Model {model['id']} already has a {dep_type}; skipping new link")
+                    continue
             try:
                 run_query(
                     """
@@ -553,6 +597,8 @@ def find_and_link_to_models(artifact_id: int, artifact_type: str, artifact_name:
                 links_created += 1
                 linked_model_ids.append(model['id'])
                 linked_models_info.append({"id": model['id'], "name": model.get('name')})
+                if enforce_limit:
+                    dependency_state[model['id']].add(dep_type)
                 print(f"[DEPENDENCY] Linked {artifact_name} -> model {model['id']} as {dep_type}")
             except Exception as e:
                 print(f"[DEPENDENCY] Failed to link: {e}")
@@ -565,16 +611,23 @@ def find_and_link_to_models(artifact_id: int, artifact_type: str, artifact_name:
     
     # CASCADE: If code repo linked to models, link datasets from code README to same models
     if artifact_type == "code" and linked_models_info and code_datasets:
-        cascade_dataset_links(linked_models_info, code_datasets)
+        cascade_dataset_links(linked_models_info, code_datasets, dependency_state)
 
 
-def cascade_dataset_links(models: list, dataset_names: list):
+def cascade_dataset_links(models: list, dataset_names: list, dependency_state=None):
     """
     After linking code repo to models, link datasets mentioned in code README to same models.
     This creates the chain: dataset -> model (via code repo connection).
     """
+    dependency_type = 'dataset'
     model_ids = [m.get('id') for m in models if m.get('id') is not None]
     print(f"[DEPENDENCY CASCADE] Linking datasets {dataset_names} to models {model_ids}...")
+
+    if dependency_state is None:
+        dependency_state = load_dependency_state(model_ids, (dependency_type,))
+    else:
+        for model_id in model_ids:
+            dependency_state.setdefault(model_id, set())
     
     # Find all dataset artifacts in database
     all_datasets = run_query(
@@ -602,6 +655,15 @@ def cascade_dataset_links(models: list, dataset_names: list):
                     model_name = model_info.get('name')
                     if model_id is None:
                         continue
+                    already_has_dataset = False
+                    if model_id is not None:
+                        existing_types = dependency_state.setdefault(model_id, set())
+                        if dependency_type in existing_types:
+                            already_has_dataset = True
+                    if already_has_dataset:
+                        print(f"[DEPENDENCY CASCADE] Model {model_id} already has a {dependency_type}; skipping")
+                        continue
+
                     try:
                         run_query(
                             """
@@ -610,10 +672,12 @@ def cascade_dataset_links(models: list, dataset_names: list):
                             VALUES (%s, %s, %s, %s, %s, 'cascaded_from_code')
                             ON CONFLICT DO NOTHING;
                             """,
-                            (model_id, dataset_id, model_name, dataset_name, 'training_dataset'),
+                            (model_id, dataset_id, model_name, dataset_name, dependency_type),
                             fetch=False
                         )
                         links_created += 1
+                        if model_id is not None:
+                            dependency_state.setdefault(model_id, set()).add(dependency_type)
                         print(f"[DEPENDENCY CASCADE] Linked dataset {dataset_name} -> model {model_id}")
                     except Exception as e:
                         print(f"[DEPENDENCY CASCADE] Failed: {e}")
@@ -737,7 +801,7 @@ def lambda_handler(event, context):
         
         # NEW: Accept optional relationship info
         related_model_id = body.get("related_model_id")  # For datasets/code that belong to a model
-        relationship_type = body.get("relationship_type")  # e.g., "training_dataset", "evaluation_code", "fine_tuning_dataset"
+        relationship_type = body.get("relationship_type")  # e.g., "dataset", "code", "fine_tuning_dataset"
         
         artifact_type = event.get("pathParameters", {}).get("artifact_type")
         

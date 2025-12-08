@@ -533,7 +533,7 @@ class DatasetQualityMetric(Metric):
                     """
                     SELECT COUNT(*) as dataset_count
                     FROM artifact_dependencies
-                    WHERE model_id = %s AND dependency_type IN ('training_dataset', 'evaluation_dataset');
+                    WHERE model_id = %s AND dependency_type = 'dataset';
                     """,
                     (model_id,),
                     fetch=True
@@ -579,7 +579,7 @@ class CodeQualityMetric(Metric):
                     """
                     SELECT COUNT(*) as code_count
                     FROM artifact_dependencies
-                    WHERE model_id = %s AND dependency_type = 'code_repository';
+                    WHERE model_id = %s AND dependency_type = 'code';
                     """,
                     (model_id,),
                     fetch=True

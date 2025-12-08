@@ -626,7 +626,13 @@ def compute_identifier_score(artifact_name: str, source_url: str, expected: str)
 
 def compute_dataset_link_score(metadata: dict, artifact_name: str, source_url: str) -> float:
     """Score how well a dataset matches a model's expected datasets."""
-    deps = metadata.get('expected_dependencies', {}) if isinstance(metadata, dict) else {}
+    raw = metadata.get('expected_dependencies', {})
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except:
+            raw = {}
+    deps = raw if isinstance(raw, dict) else {}
     candidates = deps.get('training_datasets', []) + deps.get('eval_datasets', [])
 
     max_score = 0.0
@@ -651,9 +657,14 @@ def compute_dataset_link_score(metadata: dict, artifact_name: str, source_url: s
 
 def compute_code_link_score(metadata: dict, artifact_name: str, source_url: str, code_datasets: list) -> float:
     """Score how well a code repo matches a model's expected code repos or datasets."""
-    deps = metadata.get('expected_dependencies', {}) if isinstance(metadata, dict) else {}
+    raw = metadata.get('expected_dependencies', {})
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except:
+            raw = {}
+    deps = raw if isinstance(raw, dict) else {}
     code_repos = deps.get('code_repos', [])
-    model_datasets = deps.get('training_datasets', []) + deps.get('eval_datasets', [])
 
     max_code_repo_score = 0.0
     for entry in code_repos:
@@ -672,19 +683,23 @@ def compute_code_link_score(metadata: dict, artifact_name: str, source_url: str,
             if score > max_code_repo_score:
                 max_code_repo_score = score
 
-    max_code_dataset_score = 0.0
-    for code_ds in code_datasets or []:
-        if not code_ds:
-            continue
-        for model_ds in model_datasets:
-            model_ds_name = model_ds.get('name') if isinstance(model_ds, dict) else model_ds
-            if not model_ds_name:
-                continue
-            score = compute_identifier_score(code_ds, "", model_ds_name)
-            if score > max_code_dataset_score:
-                max_code_dataset_score = score
+    # Architecture-aware matching (e.g., resnet-50 ↔ KaimingHe repo)
+    model_name = (metadata.get("name") or "").lower()
+    artifact_norm = normalize_identifier(artifact_name)
 
-    return max(max_code_repo_score, max_code_dataset_score)
+    # Detect architecture tokens such as resnet-50
+    arch_terms = []
+    match = re.findall(r"(resnet[-_]?\d+)", model_name)
+    if match:
+        arch_terms.extend(match)
+    if "resnet" in model_name:
+        arch_terms.append("resnet")
+
+    for token in arch_terms:
+        if token in artifact_norm:
+            max_code_repo_score = max(max_code_repo_score, 0.90)
+
+    return max_code_repo_score
 
 
 def load_dependency_state(model_ids, dependency_types):
@@ -774,10 +789,16 @@ def find_and_link_to_models(artifact_id: int, artifact_type: str, artifact_name:
         dependencies = raw_deps if isinstance(raw_deps, dict) else {}
 
         if artifact_type == "dataset":
-            if not dependencies:
-                continue
             score = compute_dataset_link_score(metadata, artifact_name, source_url)
-            if score < DATASET_LINK_THRESHOLD:
+            # Fallback: if the model does not declare expected datasets and the
+            # dataset name is strongly similar to the model name, allow linking.
+            if not dependencies:
+                sim = fuzzy_string_similarity(artifact_name, model.get("name", ""))
+                if sim >= 0.70:
+                    score = sim
+                else:
+                    continue
+            elif score < DATASET_LINK_THRESHOLD:
                 continue
             dep_type = 'dataset'
             matched_score = score

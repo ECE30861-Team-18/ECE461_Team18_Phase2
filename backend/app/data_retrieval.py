@@ -388,12 +388,13 @@ class HuggingFaceAPIClient:
         if not siblings:
             enriched = []
             for entry in tree_entries:
-                path = entry.get("path")
-                if not path:
+                path_value = entry.get("path")
+                if not path_value:
                     continue
+                path: str = str(path_value)
                 enriched.append(
                     {
-                        "rfilename": str(path),
+                        "rfilename": path,
                         "size": entry.get("size") or entry.get("lfs", {}).get("size"),
                         "lfs": entry.get("lfs"),
                         "oid": entry.get("oid"),

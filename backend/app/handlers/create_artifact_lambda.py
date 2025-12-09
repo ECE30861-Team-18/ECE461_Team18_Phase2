@@ -5,6 +5,7 @@ import re
 import boto3
 import traceback   # <<< LOGGING
 from string import Template
+from typing import Any, Dict
 
 from auth import require_auth
 from metric_calculator import MetricCalculator
@@ -1064,7 +1065,7 @@ def log_exception(e):  # <<< LOGGING
 # -----------------------------
 # Lambda Handler
 # -----------------------------
-def lambda_handler(event, context):
+def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
     log_event(event, context)  # <<< LOGGING
 

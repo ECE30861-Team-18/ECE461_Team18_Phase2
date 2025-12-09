@@ -49,6 +49,11 @@ class SizeMetric(Metric):
         start_time = time.time()
         
         try:
+            if isinstance(model_info, str):
+                try:
+                    model_info = json.loads(model_info)
+                except Exception:
+                    model_info = {}
             # Parse model size from data (expecting JSON with model info)
             model_size_gb = self._get_model_size(model_info)
             size_display = (
@@ -254,6 +259,11 @@ class RampUpMetric(Metric):
         start_time = time.time()
         
         try:
+            if isinstance(model_info, str):
+                try:
+                    model_info = json.loads(model_info)
+                except Exception:
+                    model_info = {}
             
             score = 0.0
             readme_text = model_info.get("readme", "")

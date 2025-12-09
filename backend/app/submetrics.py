@@ -424,24 +424,25 @@ class BusFactorMetric(Metric):
                     model_info = json.loads(model_info)
                 except Exception:
                     model_info = {}
-            score = 0.0
+            score = 0.2  # baseline trust that model is published and visible
             model_id = model_info.get("id")
             print(
                 f"[BUS_FACTOR] Start metric={self.name} model_id={model_id} "
-                f"author={model_info.get('author')} last_modified={model_info.get('lastModified')}"
+                f"author={model_info.get('author')} last_modified={model_info.get('lastModified')} "
+                f"baseline_score={score:.3f}"
             )
             
-            # Organization vs individual author (60% of score)
+            # Organization vs individual author (20% of score)
             org_score = self._evaluate_organization(model_info)
-            score += org_score * 0.6
+            score += org_score * 0.2
             
-            # Number of collaborators/contributors (30% of score)
+            # Number of collaborators/contributors (50% of score)
             contrib_score = self._evaluate_contributors(model_info)
-            score += contrib_score * 0.3
+            score += contrib_score * 0.5
             
-            # Activity and maintenance (10% of score)
+            # Activity and maintenance (30% of score)
             activity_score = self._evaluate_activity(model_info)
-            score += activity_score * 0.1
+            score += activity_score * 0.3
             
             self._latency = int((time.time() - start_time) * 1000)
             final_score = min(1.0, score)
@@ -466,7 +467,7 @@ class BusFactorMetric(Metric):
         author = model_info.get("author", "").lower()
         model_id = model_info.get("id", "").lower()
         reason = "individual"
-        score = 0.3
+        score = 0.5
         
         # Known organizations get higher scores
         organizations = [
@@ -509,11 +510,13 @@ class BusFactorMetric(Metric):
         if num_contributors >= 10:
             score = 1.0
         elif num_contributors >= 6:
-            score = 0.7
+            score = 0.8
         elif num_contributors >= 3:
-            score = 0.5
+            score = 0.6
+        elif num_contributors >= 1:
+            score = 0.4
         else:
-            score = 0.2
+            score = 0.3  # treat 0/unknown as low but not catastrophic
         print(
             f"[BUS_FACTOR][CONTRIB] model_id={model_info.get('id')} "
             f"contributors={num_contributors} score={score:.3f}"
@@ -526,9 +529,9 @@ class BusFactorMetric(Metric):
         if not last_modified:
             print(
                 f"[BUS_FACTOR][ACTIVITY] model_id={model_info.get('id')} "
-                f"reason=no_last_modified score=0.200"
+                f"reason=no_last_modified score=0.300"
             )
-            return 0.2
+            return 0.3
         
         # Parse date and calculate days since last update
         try:
@@ -551,9 +554,9 @@ class BusFactorMetric(Metric):
         except:
             print(
                 f"[BUS_FACTOR][ACTIVITY] model_id={model_info.get('id')} "
-                f"reason=parse_error score=0.200"
+                f"reason=parse_error score=0.300"
             )
-            return 0.2
+            return 0.3
     
     def calculate_latency(self) -> int:
         return getattr(self, '_latency', 0)

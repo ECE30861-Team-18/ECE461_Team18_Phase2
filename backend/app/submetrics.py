@@ -203,6 +203,8 @@ class SizeMetric(Metric):
             lfs_info = file_info.get("lfs")
             if isinstance(lfs_info, dict):
                 size_value = lfs_info.get("size")
+        if size_value is None:
+            return 0.0
         try:
             return float(size_value)
         except (TypeError, ValueError):

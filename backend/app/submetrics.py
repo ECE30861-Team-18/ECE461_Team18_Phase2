@@ -100,10 +100,20 @@ class SizeMetric(Metric):
     
     def _get_model_size(self, model_info: Dict[str, Any]) -> float:
         """Extract model size in GB from model info"""
-        # Priority 1: Use HuggingFace's actual storage data (most accurate)
-        if "used_storage" in model_info and model_info["used_storage"]:
+        # Priority 1: Sum explicit weight-file sizes retrieved from HF API
+        weight_bytes = self._sum_weight_file_sizes(model_info)
+        if weight_bytes > 0:
+            return weight_bytes / (1024**3)
+
+        # Priority 2: Use HuggingFace's reported storage data (can be noisy)
+        storage_value = None
+        for key in ("used_storage", "usedStorage"):
+            if key in model_info and model_info[key]:
+                storage_value = model_info[key]
+                break
+        if storage_value is not None:
             try:
-                storage_bytes = float(model_info["used_storage"])
+                storage_bytes = float(storage_value)
                 return storage_bytes / (1024**3)  # Convert bytes to GB
             except Exception:
                 pass
@@ -146,23 +156,57 @@ class SizeMetric(Metric):
         try:
             siblings = model_info.get("siblings") or []
             if isinstance(siblings, list) and siblings:
-                model_file_indicators = [
-                    ".safetensors", "pytorch_model.bin", "tf_model.h5", "model.onnx",
-                ]
-                total_bytes = 0.0
-                for file_info in siblings:
-                    name = str((file_info or {}).get("rfilename") or (file_info or {}).get("filename") or (file_info or {}).get("path") or "").lower()
-                    if any(ind in name for ind in model_file_indicators):
-                        try:
-                            total_bytes += float((file_info or {}).get("size", 0) or 0)
-                        except Exception:
-                            continue
-                if total_bytes > 0:
-                    return float(total_bytes) / (1024**3)
+                backup_bytes = self._sum_weight_file_sizes(model_info, include_all_candidates=True)
+                if backup_bytes > 0:
+                    return backup_bytes / (1024**3)
         except Exception:
             pass
         # Default assumption for unknown size
         return 0.6
+
+    def _sum_weight_file_sizes(self, model_info: Dict[str, Any], include_all_candidates: bool = False) -> float:
+        """Sum sizes (bytes) of files that look like model weights."""
+        siblings = model_info.get("siblings") or []
+        if not isinstance(siblings, list):
+            return 0.0
+
+        indicators = [
+            ".safetensors",
+            "pytorch_model.bin",
+            "model.safetensors",
+            "tf_model.h5",
+            "model.onnx",
+            ".gguf",
+            "checkpoint",
+        ]
+        total_bytes = 0.0
+        for file_info in siblings:
+            if not isinstance(file_info, dict):
+                continue
+            name = str(
+                file_info.get("rfilename")
+                or file_info.get("filename")
+                or file_info.get("path")
+                or ""
+            ).lower()
+            if not name:
+                continue
+            if include_all_candidates or any(ind in name for ind in indicators):
+                size_bytes = self._extract_file_size_bytes(file_info)
+                if size_bytes > 0:
+                    total_bytes += size_bytes
+        return total_bytes
+
+    def _extract_file_size_bytes(self, file_info: Dict[str, Any]) -> float:
+        size_value = file_info.get("size")
+        if size_value is None:
+            lfs_info = file_info.get("lfs")
+            if isinstance(lfs_info, dict):
+                size_value = lfs_info.get("size")
+        try:
+            return float(size_value)
+        except (TypeError, ValueError):
+            return 0.0
     
     def calculate_latency(self) -> int:
         return getattr(self, '_latency', 0)

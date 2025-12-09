@@ -352,6 +352,82 @@ class HuggingFaceAPIClient:
         except Exception as e:
             logger.exception("HuggingFaceAPIClient: error extracting license from README")
             return None
+
+    def _fetch_model_tree(self, identifier: str, revision: str = "main") -> List[Dict[str, Any]]:
+        """Retrieve the repository tree to capture per-file sizes."""
+        tree_url = f"https://huggingface.co/api/models/{identifier}/tree/{revision}"
+        try:
+            resp = self.session.get(tree_url, timeout=10)
+            if resp.status_code == 404 and revision != "main":
+                resp = self.session.get(
+                    f"https://huggingface.co/api/models/{identifier}/tree/main",
+                    timeout=10,
+                )
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, list):
+                    return data
+        except Exception:
+            logger.warning("HuggingFaceAPIClient: failed to fetch tree for %s", identifier)
+        return []
+
+    def _enrich_siblings_with_tree(
+        self,
+        siblings: Optional[List[Dict[str, Any]]],
+        tree_entries: List[Dict[str, Any]],
+    ) -> Optional[List[Dict[str, Any]]]:
+        if not tree_entries:
+            return siblings
+
+        lookup: Dict[str, Dict[str, Any]] = {}
+        for entry in tree_entries:
+            path = str(entry.get("path") or "").lower()
+            if path:
+                lookup[path] = entry
+
+        if not siblings:
+            enriched = []
+            for entry in tree_entries:
+                path = entry.get("path")
+                if not path:
+                    continue
+                enriched.append(
+                    {
+                        "rfilename": path,
+                        "size": entry.get("size") or entry.get("lfs", {}).get("size"),
+                        "lfs": entry.get("lfs"),
+                        "oid": entry.get("oid"),
+                    }
+                )
+            return enriched
+
+        enriched_siblings: List[Dict[str, Any]] = []
+        for sibling in siblings:
+            if not isinstance(sibling, dict):
+                enriched_siblings.append(sibling)
+                continue
+
+            key = (
+                sibling.get("rfilename")
+                or sibling.get("filename")
+                or sibling.get("path")
+                or ""
+            )
+            lookup_entry = lookup.get(str(key).lower()) if key else None
+            if lookup_entry:
+                updated = dict(sibling)
+                size_value = updated.get("size") or lookup_entry.get("size")
+                if not size_value and lookup_entry.get("lfs"):
+                    size_value = lookup_entry["lfs"].get("size")
+                if size_value:
+                    updated["size"] = size_value
+                if lookup_entry.get("lfs"):
+                    updated["lfs"] = lookup_entry["lfs"]
+                enriched_siblings.append(updated)
+            else:
+                enriched_siblings.append(sibling)
+
+        return enriched_siblings
     
     def get_model_data(self, identifier: str) -> RepositoryData:
         try:
@@ -378,6 +454,9 @@ class HuggingFaceAPIClient:
             response.raise_for_status()
             model_data = response.json()
             logger.debug("HuggingFaceAPIClient: received data for %s, keys=%s", identifier, list(model_data.keys()))
+
+            tree_entries = self._fetch_model_tree(identifier)
+            siblings_with_sizes = self._enrich_siblings_with_tree(model_data.get('siblings'), tree_entries)
             
             # Parse dates
             created_at = None
@@ -448,7 +527,7 @@ class HuggingFaceAPIClient:
                 spaces=model_data.get('spaces'),
                 safetensors=model_data.get('safetensors'),
                 inference=model_data.get('inference'),
-                siblings=model_data.get('siblings'),
+                siblings=siblings_with_sizes,
             )
             
         except requests.exceptions.RequestException as e:

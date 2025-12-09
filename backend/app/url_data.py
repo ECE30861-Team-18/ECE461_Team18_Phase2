@@ -4,7 +4,7 @@ Dataclasses containing information about a URL or a repository
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Any
 from url_category import URLCategory
 
 @dataclass
@@ -44,7 +44,7 @@ class RepositoryData:
     repository_url: Optional[str] = None
     error_message: Optional[str] = None
     success: bool = True
-    siblings: Optional[List[str]] = None
+    siblings: Optional[List[Any]] = None
     readme: Optional[str] = None
     
     # Additional HuggingFace-specific fields

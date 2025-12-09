@@ -407,13 +407,14 @@ class HuggingFaceAPIClient:
                 enriched_siblings.append(sibling)
                 continue
 
-            key = (
+            raw_key = (
                 sibling.get("rfilename")
                 or sibling.get("filename")
                 or sibling.get("path")
                 or ""
             )
-            lookup_entry = lookup.get(str(key).lower()) if key else None
+            key: str = str(raw_key) if raw_key is not None else ""
+            lookup_entry = lookup.get(key.lower()) if key else None
             if lookup_entry:
                 updated = dict(sibling)
                 size_value = updated.get("size") or lookup_entry.get("size")

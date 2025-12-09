@@ -26,6 +26,8 @@ except Exception:
 GEN_AI_STUDIO_API_KEY = os.environ.get('GEN_AI_STUDIO_API_KEY')
 
 
+
+
 class SizeMetric(Metric):
     """Calculates size compatibility scores for different hardware platforms"""
     
@@ -49,21 +51,46 @@ class SizeMetric(Metric):
         try:
             # Parse model size from data (expecting JSON with model info)
             model_size_gb = self._get_model_size(model_info)
+            size_display = (
+                f"{model_size_gb:.4f}"
+                if isinstance(model_size_gb, (int, float))
+                else str(model_size_gb)
+            )
+            print(
+                f"[SIZE_METRIC] Start metric={self.name} model_id={model_info.get('id')} "
+                f"model_size_gb={size_display}"
+            )
             
             scores: Dict[str, float] = {}
             for hardware, limit_gb in self.hardware_limits.items():
                 # Calculate effective memory limit after accounting for OS and overhead
-                
-                usage = limit_gb / model_size_gb
+                if not model_size_gb:
+                    usage = float('inf')
+                else:
+                    usage = limit_gb / model_size_gb
                 scores[hardware] = usage if usage <= 1.0 else 1.0
+                ratio_display = "inf" if math.isinf(usage) else f"{usage:.3f}"
+                print(
+                    f"[SIZE_METRIC] hardware={hardware} limit_gb={limit_gb} "
+                    f"raw_ratio={ratio_display} "
+                    f"score={scores[hardware]:.3f}"
+                )
 
 
             self._latency = int((time.time() - start_time) * 1000)
+            print(
+                f"[SIZE_METRIC] Complete metric={self.name} model_id={model_info.get('id')} "
+                f"latency_ms={self._latency} scores={scores}"
+            )
             return scores
             
         except Exception as e:
             self._latency = int((time.time() - start_time) * 1000)
             # Return minimum scores on error
+            print(
+                f"[SIZE_METRIC][ERROR] metric={self.name} model_id={model_info.get('id')} "
+                f"latency_ms={self._latency} error={e}"
+            )
             return {hw: 0.0 for hw in self.hardware_limits.keys()}
     
     def _get_model_size(self, model_info: Dict[str, Any]) -> float:
@@ -229,9 +256,14 @@ class RampUpMetric(Metric):
         try:
             
             score = 0.0
+            readme_text = model_info.get("readme", "")
+            print(
+                f"[RAMP_UP] Start metric={self.name} model_id={model_info.get('id')} "
+                f"readme_present={bool(readme_text)} readme_length={len(readme_text or '')}"
+            )
             
             # Check for README quality (70% of score)
-            readme_score = self._evaluate_readme(model_info.get("readme", ""))
+            readme_score = self._evaluate_readme(readme_text)
             score += readme_score * 0.7
             
             # Check for clear model card/description (30% of score)
@@ -239,10 +271,20 @@ class RampUpMetric(Metric):
             score += card_score * 0.3
             
             self._latency = int((time.time() - start_time) * 1000)
+            final_score = min(1.0, score)
+            print(
+                f"[RAMP_UP] Complete metric={self.name} model_id={model_info.get('id')} "
+                f"readme_score={readme_score:.3f} card_score={card_score:.3f} "
+                f"final_score={final_score:.3f} latency_ms={self._latency}"
+            )
             return min(1.0, score)
             
         except Exception as e:
             self._latency = int((time.time() - start_time) * 1000)
+            print(
+                f"[RAMP_UP][ERROR] metric={self.name} model_id={model_info.get('id')} "
+                f"latency_ms={self._latency} error={e}"
+            )
             return 0.0
     
     def _evaluate_readme(self, readme: str) -> float:
@@ -252,29 +294,44 @@ class RampUpMetric(Metric):
         
         readme_lower = readme.lower()
         score = 0.0
+        reasons: List[str] = []
         
         # Check for key sections
         if "usage" in readme_lower or "how to use" in readme_lower:
             score += 0.3
+            reasons.append("usage +0.3")
         if "example" in readme_lower or "```python" in readme_lower:
             score += 0.3
+            reasons.append("examples +0.3")
         if "install" in readme_lower:
             score += 0.2
+            reasons.append("install +0.2")
         if len(readme) > 500:  # Substantial documentation
             score += 0.2
+            reasons.append("length>500 +0.2")
+        print(
+            f"[RAMP_UP][README] reasons={reasons or ['none']} subtotal={min(1.0, score):.3f}"
+        )
         
         return min(1.0, score)
     
     def _evaluate_model_card(self, model_info: Dict[str, Any]) -> float:
         """Evaluate model card completeness"""
         score = 0.0
+        reasons: List[str] = []
         
         if model_info.get("description"):
             score += 0.7
+            reasons.append("description +0.7")
         if model_info.get("datasets"):
             score += 0.2
+            reasons.append("datasets +0.2")
         if model_info.get("tags"):
             score += 0.1  
+            reasons.append("tags +0.1")
+        print(
+            f"[RAMP_UP][CARD] reasons={reasons or ['none']} subtotal={min(1.0, score):.3f}"
+        )
         
         return min(1.0, score)
     

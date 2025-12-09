@@ -313,18 +313,29 @@ class RampUpMetric(Metric):
             
             score = 0.0
             readme_text = model_info.get("readme", "")
+            readme_present = bool((readme_text or "").strip())
+
+            base_score = 0.0
+            if readme_present:
+                base_score += 0.25
+            if model_info.get("description"):
+                base_score += 0.1
+            if model_info.get("tags"):
+                base_score += 0.05
+            score += min(0.4, base_score)
             print(
                 f"[RAMP_UP] Start metric={self.name} model_id={model_info.get('id')} "
-                f"readme_present={bool(readme_text)} readme_length={len(readme_text or '')}"
+                f"readme_present={readme_present} readme_length={len(readme_text or '')} "
+                f"base_score={score:.3f}"
             )
             
             # Check for README quality (70% of score)
             readme_score = self._evaluate_readme(readme_text)
-            score += readme_score * 0.7
+            score += readme_score * 0.55
             
             # Check for clear model card/description (30% of score)
             card_score = self._evaluate_model_card(model_info)
-            score += card_score * 0.3
+            score += card_score * 0.35
             
             self._latency = int((time.time() - start_time) * 1000)
             final_score = min(1.0, score)

@@ -436,12 +436,12 @@ class HuggingFaceAPIClient:
             # Try to get model information first
             model_url = f"{self.base_url}/models/{identifier}"
             logger.info("HuggingFaceAPIClient: requesting model/dataset %s", identifier)
-            response = self.session.get(model_url, params={"expand": "files"})
+            response = self.session.get(model_url)
             
             if response.status_code == 404:
                 # Try as dataset
                 dataset_url = f"{self.base_url}/datasets/{identifier}"
-                response = self.session.get(dataset_url, params={"expand": "files"})
+                response = self.session.get(dataset_url)
                 
                 if response.status_code == 404:
                     logger.warning("HuggingFaceAPIClient: model/dataset not found %s", identifier)

@@ -393,7 +393,7 @@ class HuggingFaceAPIClient:
                     continue
                 enriched.append(
                     {
-                        "rfilename": path,
+                        "rfilename": str(path),
                         "size": entry.get("size") or entry.get("lfs", {}).get("size"),
                         "lfs": entry.get("lfs"),
                         "oid": entry.get("oid"),

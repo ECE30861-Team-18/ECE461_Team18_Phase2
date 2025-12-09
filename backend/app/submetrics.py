@@ -598,24 +598,24 @@ class AvailableScoreMetric(Metric):
         # Check for dataset tags/metadata
         datasets = model_info.get("datasets")
         if datasets:
-            score += 0.6
+            score += 0.4
         
         # Check README for dataset information
         readme = (model_info.get("readme") or "").lower()
         dataset_terms = ["dataset", "training data", "trained on", "corpus", "data", "pretraining", "fine-tuned", "benchmark"]
         if any(term in readme for term in dataset_terms):
-            score += 0.4
+            score += 0.3
         
         # Check tags for dataset information
         tags = model_info.get("tags", [])
         dataset_tags = ["dataset", "corpus", "benchmark", "evaluation"]
         if any(any(tag_term in str(tag or "").lower() for tag_term in dataset_tags) for tag in tags):
-            score += 0.2
+            score += 0.15
         
         # Check for model card or description mentioning datasets
         description = (model_info.get("description") or "").lower()
         if description and any(term in description for term in dataset_terms):
-            score += 0.3
+            score += 0.2
         
         return min(1.0, score)
     
@@ -634,13 +634,13 @@ class AvailableScoreMetric(Metric):
                 filename = str(file_info.get("rfilename") or "").lower()
                 for indicator in code_indicators:
                     if indicator in filename:
-                        score += 0.2
+                        score += 0.15
                         break
         
         # Check README for code examples or usage instructions
         code_terms = ["usage", "example", "code", "import", "from transformers", "model =", "tokenizer =", "```python", "```"]
         if any(term in readme for term in code_terms):
-            score += 0.4
+            score += 0.25
         
         # Check for model-specific files that indicate usability
         if files:
@@ -648,12 +648,12 @@ class AvailableScoreMetric(Metric):
             for file_info in files:
                 filename = str(file_info.get("rfilename") or "").lower()
                 if any(model_file in filename for model_file in model_files):
-                    score += 0.3
+                    score += 0.25
                     break
         
         # If no files but substantial documentation with usage info, still give some credit
         if not files and len(readme) > 500 and any(term in readme for term in ["usage", "how to use", "import"]):
-            score = 0.6
+            score = 0.3
         
         return min(1.0, score)
     

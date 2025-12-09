@@ -419,6 +419,11 @@ class BusFactorMetric(Metric):
         start_time = time.time()
         
         try:
+            if isinstance(model_info, str):
+                try:
+                    model_info = json.loads(model_info)
+                except Exception:
+                    model_info = {}
             score = 0.0
             model_id = model_info.get("id")
             print(

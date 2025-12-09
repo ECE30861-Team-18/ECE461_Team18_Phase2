@@ -61,11 +61,6 @@ class SizeMetric(Metric):
                 if isinstance(model_size_gb, (int, float))
                 else str(model_size_gb)
             )
-            print(
-                f"[SIZE_METRIC] Start metric={self.name} model_id={model_info.get('id')} "
-                f"model_size_gb={size_display}"
-            )
-            
             scores: Dict[str, float] = {}
             for hardware, limit_gb in self.hardware_limits.items():
                 # Calculate effective memory limit after accounting for OS and overhead
@@ -74,28 +69,14 @@ class SizeMetric(Metric):
                 else:
                     usage = limit_gb / model_size_gb
                 scores[hardware] = usage if usage <= 1.0 else 1.0
-                ratio_display = "inf" if math.isinf(usage) else f"{usage:.3f}"
-                print(
-                    f"[SIZE_METRIC] hardware={hardware} limit_gb={limit_gb} "
-                    f"raw_ratio={ratio_display} "
-                    f"score={scores[hardware]:.3f}"
-                )
 
 
             self._latency = int((time.time() - start_time) * 1000)
-            print(
-                f"[SIZE_METRIC] Complete metric={self.name} model_id={model_info.get('id')} "
-                f"latency_ms={self._latency} scores={scores}"
-            )
             return scores
             
         except Exception as e:
             self._latency = int((time.time() - start_time) * 1000)
             # Return minimum scores on error
-            print(
-                f"[SIZE_METRIC][ERROR] metric={self.name} model_id={model_info.get('id')} "
-                f"latency_ms={self._latency} error={e}"
-            )
             return {hw: 0.0 for hw in self.hardware_limits.keys()}
     
     def _get_model_size(self, model_info: Dict[str, Any]) -> float:
@@ -439,6 +420,11 @@ class BusFactorMetric(Metric):
         
         try:
             score = 0.0
+            model_id = model_info.get("id")
+            print(
+                f"[BUS_FACTOR] Start metric={self.name} model_id={model_id} "
+                f"author={model_info.get('author')} last_modified={model_info.get('lastModified')}"
+            )
             
             # Organization vs individual author (60% of score)
             org_score = self._evaluate_organization(model_info)
@@ -453,16 +439,29 @@ class BusFactorMetric(Metric):
             score += activity_score * 0.1
             
             self._latency = int((time.time() - start_time) * 1000)
-            return min(1.0, score)
+            final_score = min(1.0, score)
+            print(
+                f"[BUS_FACTOR] Complete metric={self.name} model_id={model_id} "
+                f"org_score={org_score:.3f} contrib_score={contrib_score:.3f} "
+                f"activity_score={activity_score:.3f} final_score={final_score:.3f} "
+                f"latency_ms={self._latency}"
+            )
+            return final_score
             
         except Exception as e:
             self._latency = int((time.time() - start_time) * 1000)
+            print(
+                f"[BUS_FACTOR][ERROR] metric={self.name} model_id={model_info.get('id')} "
+                f"latency_ms={self._latency} error={e}"
+            )
             return 0.0
     
     def _evaluate_organization(self, model_info: Dict[str, Any]) -> float:
         """Higher score for organizational backing"""
         author = model_info.get("author", "").lower()
         model_id = model_info.get("id", "").lower()
+        reason = "individual"
+        score = 0.3
         
         # Known organizations get higher scores
         organizations = [
@@ -475,13 +474,21 @@ class BusFactorMetric(Metric):
         search_text = f"{author} {model_id}"
         for org in organizations:
             if org in search_text:
-                return 1.0
+                reason = f"matched:{org}"
+                score = 1.0
+                break
         
         # Check if it looks like an organization (not individual name)
-        if any(indicator in search_text for indicator in ["team", "lab", "corp", "inc", "ltd", "research", "ai", "institute"]):
-            return 0.8
-        
-        return 0.3  # Individual author
+        if score < 1.0 and any(
+            indicator in search_text
+            for indicator in ["team", "lab", "corp", "inc", "ltd", "research", "ai", "institute"]
+        ):
+            reason = "org-indicator"
+            score = 0.8
+        print(
+            f"[BUS_FACTOR][ORG] model_id={model_info.get('id')} score={score:.3f} reason={reason}"
+        )
+        return score
     
     def _evaluate_contributors(self, model_info: Dict[str, Any]) -> float:
         """Evaluate based on number of contributors"""
@@ -495,18 +502,27 @@ class BusFactorMetric(Metric):
             num_contributors = 0
 
         if num_contributors >= 10:
-            return 1.0
+            score = 1.0
         elif num_contributors >= 6:
-            return 0.7
+            score = 0.7
         elif num_contributors >= 3:
-            return 0.5
+            score = 0.5
         else:
-            return 0.2
+            score = 0.2
+        print(
+            f"[BUS_FACTOR][CONTRIB] model_id={model_info.get('id')} "
+            f"contributors={num_contributors} score={score:.3f}"
+        )
+        return score
     
     def _evaluate_activity(self, model_info: Dict[str, Any]) -> float:
         """Evaluate recent activity based on last modified date"""
         last_modified = model_info.get("lastModified")
         if not last_modified:
+            print(
+                f"[BUS_FACTOR][ACTIVITY] model_id={model_info.get('id')} "
+                f"reason=no_last_modified score=0.200"
+            )
             return 0.2
         
         # Parse date and calculate days since last update
@@ -515,14 +531,23 @@ class BusFactorMetric(Metric):
             days_old = (datetime.now(timezone.utc) - last_date).days
             
             if days_old <= 30:
-                return 1.0
+                score = 1.0
             elif days_old <= 90:
-                return 0.7
+                score = 0.7
             elif days_old <= 365:
-                return 0.4
+                score = 0.4
             else:
-                return 0.1
+                score = 0.1
+            print(
+                f"[BUS_FACTOR][ACTIVITY] model_id={model_info.get('id')} days_old={days_old} "
+                f"score={score:.3f}"
+            )
+            return score
         except:
+            print(
+                f"[BUS_FACTOR][ACTIVITY] model_id={model_info.get('id')} "
+                f"reason=parse_error score=0.200"
+            )
             return 0.2
     
     def calculate_latency(self) -> int:

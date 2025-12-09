@@ -349,8 +349,8 @@ class RampUpMetric(Metric):
             return 0.0
         
         readme_lower = readme.lower()
-        score = 0.15  # baseline credit for any README content
-        reasons: List[str] = ["baseline +0.15"]
+        score = 0.25  # higher baseline credit for any README content
+        reasons: List[str] = ["baseline +0.25"]
         
         # Check for key sections
         if "usage" in readme_lower or "how to use" in readme_lower:
@@ -363,11 +363,11 @@ class RampUpMetric(Metric):
             score += 0.2
             reasons.append("install +0.2")
         if any(term in readme_lower for term in ["quickstart", "getting started", "setup"]):
-            score += 0.1
-            reasons.append("onboarding +0.1")
+            score += 0.15
+            reasons.append("onboarding +0.15")
         if len(readme) > 300:
-            score += 0.1
-            reasons.append("length>300 +0.1")
+            score += 0.15
+            reasons.append("length>300 +0.15")
         if len(readme) > 1200:
             score += 0.1
             reasons.append("length>1200 +0.1")

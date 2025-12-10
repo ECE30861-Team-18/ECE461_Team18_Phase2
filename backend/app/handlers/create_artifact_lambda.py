@@ -3,7 +3,7 @@ import os
 import difflib
 import re
 import boto3
-import traceback   # <<< LOGGING
+import traceback  # <<< LOGGING
 from string import Template
 from typing import Any, Dict
 
@@ -23,6 +23,7 @@ DEPENDENCY_CAP_TYPES = ("dataset", "code")
 DATASET_LINK_THRESHOLD = 0.75
 CODE_LINK_THRESHOLD = 0.75
 
+
 # -----------------------------
 # DATASET/CODE DEPENDENCY EXTRACTION (SEPARATE FROM LINEAGE)
 # -----------------------------
@@ -37,34 +38,34 @@ def extract_frontmatter_datasets(readme: str) -> list:
     ---
     """
     import re
-    
+
     # Match YAML frontmatter
-    frontmatter_match = re.match(r'^---\s*\n(.*?)\n---', readme, re.DOTALL)
+    frontmatter_match = re.match(r"^---\s*\n(.*?)\n---", readme, re.DOTALL)
     if not frontmatter_match:
         return []
-    
+
     frontmatter = frontmatter_match.group(1)
     datasets = []
-    
+
     # Look for datasets: section
     in_datasets = False
-    for line in frontmatter.split('\n'):
+    for line in frontmatter.split("\n"):
         line = line.strip()
-        
-        if line.startswith('datasets:'):
+
+        if line.startswith("datasets:"):
             in_datasets = True
             continue
-        
+
         if in_datasets:
             # Check if still in list (starts with -)
-            if line.startswith('- '):
+            if line.startswith("- "):
                 dataset_name = line[2:].strip()
                 if dataset_name:
                     datasets.append(dataset_name)
-            elif line and not line.startswith('#'):
+            elif line and not line.startswith("#"):
                 # Hit next section
                 in_datasets = False
-    
+
     return datasets
 
 
@@ -75,22 +76,22 @@ def extract_github_urls(readme: str) -> list:
     And plain URLs: https://github.com/org/repo
     """
     import re
-    
+
     github_urls = set()
-    
+
     # Pattern 1: Markdown links [text](https://github.com/...)
-    markdown_pattern = r'\[([^\]]+)\]\((https?://github\.com/[^\)]+)\)'
+    markdown_pattern = r"\[([^\]]+)\]\((https?://github\.com/[^\)]+)\)"
     for match in re.finditer(markdown_pattern, readme):
         github_urls.add(match.group(2))
-    
+
     # Pattern 2: Plain URLs https://github.com/...
-    url_pattern = r'https?://github\.com/[\w\-]+/[\w\-\.]+'
+    url_pattern = r"https?://github\.com/[\w\-]+/[\w\-\.]+"
     for match in re.finditer(url_pattern, readme):
         url = match.group(0)
         # Clean up trailing punctuation
-        url = url.rstrip('.),;:')
+        url = url.rstrip(".),;:")
         github_urls.add(url)
-    
+
     return list(github_urls)
 
 
@@ -101,13 +102,13 @@ def extract_artifact_dependencies(readme: str) -> dict:
     """
     if not readme or len(readme.strip()) < 50:
         return {"training_datasets": [], "eval_datasets": [], "code_repos": []}
-    
+
     # Step 1: Extract from frontmatter (most reliable)
     frontmatter_datasets = extract_frontmatter_datasets(readme)
-    
+
     # Step 2: Extract GitHub URLs directly (covers most cases like bert-base-uncased)
     github_urls = extract_github_urls(readme)
-    
+
     # Step 3: Always use LLM to extract keywords (even if we have frontmatter)
     # Frontmatter gives exact names, LLM adds flexible matching keywords
     if frontmatter_datasets:
@@ -116,7 +117,8 @@ def extract_artifact_dependencies(readme: str) -> dict:
     if github_urls:
         print(f"[DEPENDENCY] Found GitHub URLs: {github_urls}")
         print(f"[DEPENDENCY] Using LLM to add keywords for flexible matching")
-    prompt_template = Template("""Analyze the following machine learning model README and extract dataset names and code repository references.
+    prompt_template = Template(
+        """Analyze the following machine learning model README and extract dataset names and code repository references.
 
 Your goal is to output ONLY structured JSON describing:
 1. Datasets explicitly mentioned in the README
@@ -224,104 +226,112 @@ Produce ONLY valid JSON. No comments, no text, no notes.
 README:
 $readme_snippet
 ============================================================
-""")
+"""
+    )
     prompt = prompt_template.substitute(readme_snippet=readme[:4000])
-    
+
     try:
         response = bedrock_client.invoke_model(
-            modelId='anthropic.claude-3-haiku-20240307-v1:0',
-            body=json.dumps({
-                "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": 1000,
-                "messages": [{
-                    "role": "user",
-                    "content": prompt
-                }]
-            })
+            modelId="anthropic.claude-3-haiku-20240307-v1:0",
+            body=json.dumps(
+                {
+                    "anthropic_version": "bedrock-2023-05-31",
+                    "max_tokens": 1000,
+                    "messages": [{"role": "user", "content": prompt}],
+                }
+            ),
         )
-        
-        result = json.loads(response['body'].read())
-        content = result['content'][0]['text'].strip()
-        
+
+        result = json.loads(response["body"].read())
+        content = result["content"][0]["text"].strip()
+
         # Remove markdown code blocks
-        if content.startswith('```'):
-            content = content.split('\n', 1)[1] if '\n' in content else content[3:]
-        if content.endswith('```'):
-            content = content.rsplit('\n', 1)[0] if '\n' in content else content[:-3]
-        
+        if content.startswith("```"):
+            content = content.split("\n", 1)[1] if "\n" in content else content[3:]
+        if content.endswith("```"):
+            content = content.rsplit("\n", 1)[0] if "\n" in content else content[:-3]
+
         try:
             extracted = json.loads(content)
         except Exception:
-            print("[DEPENDENCY] LLM returned invalid JSON, falling back to empty dependencies")
-            extracted = {
-                "training_datasets": [],
-                "eval_datasets": [],
-                "code_repos": []
-            }
+            print(
+                "[DEPENDENCY] LLM returned invalid JSON, falling back to empty dependencies"
+            )
+            extracted = {"training_datasets": [], "eval_datasets": [], "code_repos": []}
 
         print(f"[DEPENDENCY] LLM extracted: {extracted}")
-        
+
         # Normalize LLM output to include keywords
         normalized: dict = {
             "training_datasets": [],
             "eval_datasets": [],
-            "code_repos": []
+            "code_repos": [],
         }
-        
+
         # Merge frontmatter datasets (exact names) with LLM keywords
         if frontmatter_datasets:
             # Build a map of LLM dataset names to their keywords
             llm_dataset_keywords = {}
-            for ds in extracted.get('training_datasets', []) + extracted.get('eval_datasets', []):
+            for ds in extracted.get("training_datasets", []) + extracted.get(
+                "eval_datasets", []
+            ):
                 if isinstance(ds, dict):
-                    ds_name = ds.get('name', '').lower()
-                    ds_keywords = ds.get('keywords', [])
+                    ds_name = ds.get("name", "").lower()
+                    ds_keywords = ds.get("keywords", [])
                     if ds_name:
                         llm_dataset_keywords[ds_name] = ds_keywords
-            
+
             # Use frontmatter names but add LLM keywords if found
             for fm_ds in frontmatter_datasets:
                 fm_ds_lower = fm_ds.lower()
                 keywords = llm_dataset_keywords.get(fm_ds_lower, [])
-                
+
                 # If no exact match, try to find partial match
                 if not keywords:
                     for llm_name, llm_kw in llm_dataset_keywords.items():
                         if fm_ds_lower in llm_name or llm_name in fm_ds_lower:
                             keywords = llm_kw
                             break
-                
+
                 # Add default keyword if LLM didn't provide any
                 if not keywords:
                     keywords = [fm_ds_lower]
-                
-                normalized['training_datasets'].append({"name": fm_ds, "keywords": keywords})
-            
-            print(f"[DEPENDENCY] Merged frontmatter datasets with LLM keywords: {normalized['training_datasets']}")
+
+                normalized["training_datasets"].append(
+                    {"name": fm_ds, "keywords": keywords}
+                )
+
+            print(
+                f"[DEPENDENCY] Merged frontmatter datasets with LLM keywords: {normalized['training_datasets']}"
+            )
         else:
             # Use LLM datasets with keywords
-            for ds in extracted.get('training_datasets', []):
+            for ds in extracted.get("training_datasets", []):
                 if isinstance(ds, dict):
-                    normalized['training_datasets'].append(ds)
+                    normalized["training_datasets"].append(ds)
                 else:
-                    normalized['training_datasets'].append({"name": ds, "keywords": [ds.lower()]})
-            
-            for ds in extracted.get('eval_datasets', []):
+                    normalized["training_datasets"].append(
+                        {"name": ds, "keywords": [ds.lower()]}
+                    )
+
+            for ds in extracted.get("eval_datasets", []):
                 if isinstance(ds, dict):
-                    normalized['eval_datasets'].append(ds)
+                    normalized["eval_datasets"].append(ds)
                 else:
-                    normalized['eval_datasets'].append({"name": ds, "keywords": [ds.lower()]})
-        
+                    normalized["eval_datasets"].append(
+                        {"name": ds, "keywords": [ds.lower()]}
+                    )
+
         # Always use LLM for code repos (with keywords for flexibility)
         # Merge regex-extracted URLs with LLM-extracted repos and keywords
         all_code_repos = []
         url_to_keywords = {}
-        
+
         # First, collect LLM-extracted repos with their keywords
-        for repo in extracted.get('code_repos', []):
+        for repo in extracted.get("code_repos", []):
             if isinstance(repo, dict):
-                repo_url = repo.get('url', '')
-                repo_keywords = repo.get('keywords', [])
+                repo_url = repo.get("url", "")
+                repo_keywords = repo.get("keywords", [])
                 if repo_url:
                     url_to_keywords[repo_url.lower()] = repo_keywords
                     all_code_repos.append({"url": repo_url, "keywords": repo_keywords})
@@ -330,7 +340,7 @@ $readme_snippet
                 if repo:
                     url_to_keywords[repo.lower()] = []
                     all_code_repos.append({"url": repo, "keywords": []})
-        
+
         # Add regex-extracted URLs that weren't already found by LLM
         if github_urls:
             for url in github_urls:
@@ -339,20 +349,20 @@ $readme_snippet
                 already_added = False
                 for existing_url in url_to_keywords.keys():
                     # Normalize both URLs for comparison (remove .git, trailing slashes)
-                    norm_url = url_lower.rstrip('/').rstrip('.git')
-                    norm_existing = existing_url.rstrip('/').rstrip('.git')
+                    norm_url = url_lower.rstrip("/").rstrip(".git")
+                    norm_existing = existing_url.rstrip("/").rstrip(".git")
                     if norm_url == norm_existing:
                         already_added = True
                         break
-                
+
                 if not already_added:
                     # Add with empty keywords since LLM didn't extract it
                     all_code_repos.append({"url": url, "keywords": []})
-        
-        normalized['code_repos'] = all_code_repos
-        
+
+        normalized["code_repos"] = all_code_repos
+
         return normalized
-        
+
     except Exception as e:
         print(f"[DEPENDENCY] Failed to extract: {e}")
         return {"training_datasets": [], "eval_datasets": [], "code_repos": []}
@@ -365,8 +375,9 @@ def extract_dependencies_from_code_readme(readme: str) -> dict:
     """
     if not readme or len(readme.strip()) < 50:
         return {"datasets": []}
-    
-    prompt_template = Template("""Analyze the following code repository README and extract ONLY the datasets explicitly mentioned.
+
+    prompt_template = Template(
+        """Analyze the following code repository README and extract ONLY the datasets explicitly mentioned.
 
 ============================================================
                 EXTRACTION RULES (READ CAREFULLY)
@@ -436,43 +447,41 @@ Only return valid JSON. No comments, no natural language, no markdown.
 README:
 $readme_snippet
 ============================================================
-""")
+"""
+    )
     prompt = prompt_template.substitute(readme_snippet=readme[:4000])
-    
+
     try:
         response = bedrock_client.invoke_model(
-            modelId='anthropic.claude-3-haiku-20240307-v1:0',
-            body=json.dumps({
-                "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": 800,
-                "messages": [{
-                    "role": "user",
-                    "content": prompt
-                }]
-            })
+            modelId="anthropic.claude-3-haiku-20240307-v1:0",
+            body=json.dumps(
+                {
+                    "anthropic_version": "bedrock-2023-05-31",
+                    "max_tokens": 800,
+                    "messages": [{"role": "user", "content": prompt}],
+                }
+            ),
         )
-        
-        result = json.loads(response['body'].read())
-        content = result['content'][0]['text'].strip()
-        
-        if content.startswith('```'):
-            content = content.split('\n', 1)[1] if '\n' in content else content[3:]
-        if content.endswith('```'):
-            content = content.rsplit('\n', 1)[0] if '\n' in content else content[:-3]
-        
+
+        result = json.loads(response["body"].read())
+        content = result["content"][0]["text"].strip()
+
+        if content.startswith("```"):
+            content = content.split("\n", 1)[1] if "\n" in content else content[3:]
+        if content.endswith("```"):
+            content = content.rsplit("\n", 1)[0] if "\n" in content else content[:-3]
+
         try:
             extracted = json.loads(content)
         except Exception:
-            print("[DEPENDENCY] LLM returned invalid JSON, falling back to empty dependencies")
-            extracted = {
-                "training_datasets": [],
-                "eval_datasets": [],
-                "code_repos": []
-            }
+            print(
+                "[DEPENDENCY] LLM returned invalid JSON, falling back to empty dependencies"
+            )
+            extracted = {"training_datasets": [], "eval_datasets": [], "code_repos": []}
 
         print(f"[DEPENDENCY] Code repo datasets: {extracted}")
         return extracted
-        
+
     except Exception as e:
         print(f"[DEPENDENCY] Failed to extract from code: {e}")
         return {"datasets": []}
@@ -485,52 +494,62 @@ def matches_identifier(artifact_name: str, source_url: str, expected: str) -> bo
     """
     if not expected or len(expected) < 3:
         return False
-    
+
     expected_lower = expected.lower().strip()
     artifact_name_lower = artifact_name.lower().strip()
-    
+
     # Special handling for GitHub URLs - must match closely
-    if 'github.com' in expected_lower and source_url and 'github.com' in source_url.lower():
+    if (
+        "github.com" in expected_lower
+        and source_url
+        and "github.com" in source_url.lower()
+    ):
         import re
-        
+
         def extract_repo_path(url):
-            match = re.search(r'github\.com/([\w\-]+/[\w\-\.]+)', url.lower())
+            match = re.search(r"github\.com/([\w\-]+/[\w\-\.]+)", url.lower())
             if match:
-                return match.group(1).rstrip('.git')
+                return match.group(1).rstrip(".git")
             return None
-        
+
         expected_path = extract_repo_path(expected_lower)
         source_path = extract_repo_path(source_url.lower())
-        
+
         if expected_path and source_path:
             # Exact match
             if expected_path == source_path:
                 return True
-            
+
             # Check org/repo components
-            expected_parts = expected_path.split('/')
-            source_parts = source_path.split('/')
-            
+            expected_parts = expected_path.split("/")
+            source_parts = source_path.split("/")
+
             if len(expected_parts) == 2 and len(source_parts) == 2:
                 expected_org, expected_repo = expected_parts
                 source_org, source_repo = source_parts
-                
+
                 # Both org AND repo must have substantial overlap
-                org_match = (expected_org in source_org or source_org in expected_org)
-                repo_match = (expected_repo in source_repo or source_repo in expected_repo)
-                
+                org_match = expected_org in source_org or source_org in expected_org
+                repo_match = (
+                    expected_repo in source_repo or source_repo in expected_repo
+                )
+
                 # Require BOTH to match
                 if org_match and repo_match:
                     return True
-    
+
     # For non-URL matching, require much stricter criteria
-    expected_normalized = expected_lower.replace('-', '').replace('_', '').replace(' ', '')
-    artifact_normalized = artifact_name_lower.replace('-', '').replace('_', '').replace(' ', '')
-    
+    expected_normalized = (
+        expected_lower.replace("-", "").replace("_", "").replace(" ", "")
+    )
+    artifact_normalized = (
+        artifact_name_lower.replace("-", "").replace("_", "").replace(" ", "")
+    )
+
     # Exact match
     if expected_normalized == artifact_normalized:
         return True
-    
+
     # For dataset names: check if expected is substantial part (> 50% of artifact name)
     if len(expected_normalized) >= 5:
         # Check if expected is a significant part
@@ -539,17 +558,19 @@ def matches_identifier(artifact_name: str, source_url: str, expected: str) -> bo
             overlap_ratio = len(expected_normalized) / len(artifact_normalized)
             if overlap_ratio >= 0.5:
                 return True
-        
+
         # Check reverse
         if artifact_normalized in expected_normalized:
             overlap_ratio = len(artifact_normalized) / len(expected_normalized)
             if overlap_ratio >= 0.5:
                 return True
-    
+
     # Check suffix matching for datasets (e.g., "rajpurkar-squad" ends with "squad")
-    if artifact_name_lower.endswith('-' + expected_lower) or artifact_name_lower.endswith('_' + expected_lower):
+    if artifact_name_lower.endswith(
+        "-" + expected_lower
+    ) or artifact_name_lower.endswith("_" + expected_lower):
         return True
-    
+
     return False
 
 
@@ -559,8 +580,8 @@ def normalize_identifier(text: str) -> str:
         return ""
     cleaned = text.lower().strip()
     cleaned = cleaned.strip(".,;:/\\()[]{}\"'")
-    cleaned = re.sub(r'[_-]+', ' ', cleaned)
-    cleaned = re.sub(r'\s+', ' ', cleaned)
+    cleaned = re.sub(r"[_-]+", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned)
     return cleaned.strip()
 
 
@@ -588,7 +609,9 @@ def fuzzy_string_similarity(a: str, b: str) -> float:
     return difflib.SequenceMatcher(None, norm_a, norm_b).ratio()
 
 
-def compute_identifier_score(artifact_name: str, source_url: str, expected: str) -> float:
+def compute_identifier_score(
+    artifact_name: str, source_url: str, expected: str
+) -> float:
     """Combine strict match with fuzzy/token similarity into a score."""
     if not expected:
         return 0.0
@@ -625,24 +648,26 @@ def compute_identifier_score(artifact_name: str, source_url: str, expected: str)
     return max(0.0, min(1.0, score))
 
 
-def compute_dataset_link_score(metadata: dict, artifact_name: str, source_url: str) -> float:
+def compute_dataset_link_score(
+    metadata: dict, artifact_name: str, source_url: str
+) -> float:
     """Score how well a dataset matches a model's expected datasets."""
-    raw = metadata.get('expected_dependencies', {})
+    raw = metadata.get("expected_dependencies", {})
     if isinstance(raw, str):
         try:
             raw = json.loads(raw)
         except:
             raw = {}
     deps = raw if isinstance(raw, dict) else {}
-    candidates = deps.get('training_datasets', []) + deps.get('eval_datasets', [])
+    candidates = deps.get("training_datasets", []) + deps.get("eval_datasets", [])
 
     max_score = 0.0
     for entry in candidates:
         name = ""
         keywords: list[str] = []
         if isinstance(entry, dict):
-            name = entry.get('name', '') or ''
-            keywords = entry.get('keywords', []) or []
+            name = entry.get("name", "") or ""
+            keywords = entry.get("keywords", []) or []
         else:
             name = entry
 
@@ -656,24 +681,26 @@ def compute_dataset_link_score(metadata: dict, artifact_name: str, source_url: s
     return max_score
 
 
-def compute_code_link_score(metadata: dict, artifact_name: str, source_url: str, code_datasets: list) -> float:
+def compute_code_link_score(
+    metadata: dict, artifact_name: str, source_url: str, code_datasets: list
+) -> float:
     """Score how well a code repo matches a model's expected code repos or datasets."""
-    raw = metadata.get('expected_dependencies', {})
+    raw = metadata.get("expected_dependencies", {})
     if isinstance(raw, str):
         try:
             raw = json.loads(raw)
         except:
             raw = {}
     deps = raw if isinstance(raw, dict) else {}
-    code_repos = deps.get('code_repos', [])
+    code_repos = deps.get("code_repos", [])
 
     max_code_repo_score = 0.0
     for entry in code_repos:
         expected_url = ""
         keywords: list[str] = []
         if isinstance(entry, dict):
-            expected_url = entry.get('url', '') or ''
-            keywords = entry.get('keywords', []) or []
+            expected_url = entry.get("url", "") or ""
+            keywords = entry.get("keywords", []) or []
         else:
             expected_url = entry
 
@@ -709,8 +736,8 @@ def load_dependency_state(model_ids, dependency_types):
     if not model_ids or not dependency_types:
         return state
 
-    placeholders_ids = ', '.join(['%s'] * len(model_ids))
-    placeholders_types = ', '.join(['%s'] * len(dependency_types))
+    placeholders_ids = ", ".join(["%s"] * len(model_ids))
+    placeholders_types = ", ".join(["%s"] * len(dependency_types))
     query = f"""
         SELECT model_id, dependency_type
         FROM artifact_dependencies
@@ -726,8 +753,8 @@ def load_dependency_state(model_ids, dependency_types):
         return state
 
     for row in rows or []:
-        model_id = row.get('model_id')
-        dep_type = row.get('dependency_type')
+        model_id = row.get("model_id")
+        dep_type = row.get("dependency_type")
         if model_id is None or not dep_type:
             continue
         state.setdefault(model_id, set()).add(dep_type)
@@ -735,50 +762,55 @@ def load_dependency_state(model_ids, dependency_types):
     return state
 
 
-def find_and_link_to_models(artifact_id: int, artifact_type: str, artifact_name: str, source_url: str, readme: str = ""):
+def find_and_link_to_models(
+    artifact_id: int,
+    artifact_type: str,
+    artifact_name: str,
+    source_url: str,
+    readme: str = "",
+):
     """
     When dataset/code is ingested, find models expecting it and create dependencies.
     For code repos: also cascade dataset links (code->model implies datasets->model).
     """
     print(f"[DEPENDENCY] Linking {artifact_type} '{artifact_name}' to models...")
-    
+
     models = run_query(
-        "SELECT id, name, metadata FROM artifacts WHERE type = 'model';",
-        fetch=True
+        "SELECT id, name, metadata FROM artifacts WHERE type = 'model';", fetch=True
     )
-    
+
     if not models:
         print("[DEPENDENCY] No models found")
         return
-    
+
     links_created = 0
     linked_model_ids = []  # Track which models got linked for cascading
     linked_models_info = []  # Preserve names for cascade inserts
 
     # For code repos we only allow linking to a single model (best match)
     best_code_match = None  # (score, model_dict, dependency_type)
-    
+
     # For code repos: extract datasets mentioned in code README
     code_datasets = []
     if artifact_type == "code" and readme:
         extracted = extract_dependencies_from_code_readme(readme)
-        code_datasets = extracted.get('datasets', [])
+        code_datasets = extracted.get("datasets", [])
         print(f"[DEPENDENCY] Code repo mentions datasets: {code_datasets}")
-    
-    model_ids = [m.get('id') for m in models if m.get('id') is not None]
+
+    model_ids = [m.get("id") for m in models if m.get("id") is not None]
     dependency_state = load_dependency_state(model_ids, DEPENDENCY_CAP_TYPES)
     for model_id in model_ids:
         dependency_state.setdefault(model_id, set())
 
     for model in models:
-        metadata = model.get('metadata', {})
+        metadata = model.get("metadata", {})
         if isinstance(metadata, str):
             try:
                 metadata = json.loads(metadata)
             except:
                 continue
 
-        raw_deps = metadata.get('expected_dependencies', {})
+        raw_deps = metadata.get("expected_dependencies", {})
 
         # If stored as JSON string, decode it
         if isinstance(raw_deps, str):
@@ -801,14 +833,18 @@ def find_and_link_to_models(artifact_id: int, artifact_type: str, artifact_name:
                     continue
             elif score < DATASET_LINK_THRESHOLD:
                 continue
-            dep_type = 'dataset'
+            dep_type = "dataset"
             matched_score = score
 
-            enforce_limit = dep_type in DEPENDENCY_CAP_TYPES and model.get('id') is not None
+            enforce_limit = (
+                dep_type in DEPENDENCY_CAP_TYPES and model.get("id") is not None
+            )
             if enforce_limit:
-                existing_types = dependency_state.setdefault(model['id'], set())
+                existing_types = dependency_state.setdefault(model["id"], set())
                 if dep_type in existing_types:
-                    print(f"[DEPENDENCY] Model {model['id']} already has a {dep_type}; skipping new link")
+                    print(
+                        f"[DEPENDENCY] Model {model['id']} already has a {dep_type}; skipping new link"
+                    )
                     continue
             try:
                 run_query(
@@ -818,32 +854,48 @@ def find_and_link_to_models(artifact_id: int, artifact_type: str, artifact_name:
                     VALUES (%s, %s, %s, %s, %s, 'auto_discovered')
                     ON CONFLICT DO NOTHING;
                     """,
-                    (model['id'], artifact_id, model.get('name'), artifact_name, dep_type),
-                    fetch=False
+                    (
+                        model["id"],
+                        artifact_id,
+                        model.get("name"),
+                        artifact_name,
+                        dep_type,
+                    ),
+                    fetch=False,
                 )
                 links_created += 1
-                linked_model_ids.append(model['id'])
-                linked_models_info.append({"id": model['id'], "name": model.get('name')})
+                linked_model_ids.append(model["id"])
+                linked_models_info.append(
+                    {"id": model["id"], "name": model.get("name")}
+                )
                 if enforce_limit:
-                    dependency_state[model['id']].add(dep_type)
-                print(f"[DEPENDENCY] Linked {artifact_name} -> model {model['id']} as {dep_type} (score={matched_score:.3f})")
+                    dependency_state[model["id"]].add(dep_type)
+                print(
+                    f"[DEPENDENCY] Linked {artifact_name} -> model {model['id']} as {dep_type} (score={matched_score:.3f})"
+                )
             except Exception as e:
                 print(f"[DEPENDENCY] Failed to link: {e}")
 
         elif artifact_type == "code":
             if not dependencies and not code_datasets:
                 continue
-            score = compute_code_link_score(metadata, artifact_name, source_url, code_datasets)
+            score = compute_code_link_score(
+                metadata, artifact_name, source_url, code_datasets
+            )
             if score < CODE_LINK_THRESHOLD:
                 continue
-            dep_type = 'code'
+            dep_type = "code"
             matched_score = score
 
-            enforce_limit = dep_type in DEPENDENCY_CAP_TYPES and model.get('id') is not None
+            enforce_limit = (
+                dep_type in DEPENDENCY_CAP_TYPES and model.get("id") is not None
+            )
             if enforce_limit:
-                existing_types = dependency_state.setdefault(model['id'], set())
+                existing_types = dependency_state.setdefault(model["id"], set())
                 if dep_type in existing_types:
-                    print(f"[DEPENDENCY] Model {model['id']} already has a {dep_type}; skipping new link")
+                    print(
+                        f"[DEPENDENCY] Model {model['id']} already has a {dep_type}; skipping new link"
+                    )
                     continue
 
             # Select the best single model for this code repo
@@ -852,9 +904,9 @@ def find_and_link_to_models(artifact_id: int, artifact_type: str, artifact_name:
 
         else:
             continue
-    
+
     print(f"[DEPENDENCY] Created {links_created} links for '{artifact_name}'")
-    
+
     # If code artifact, link only the single best match (exclusive to one model)
     if artifact_type == "code" and best_code_match is not None:
         matched_score, model, dep_type = best_code_match
@@ -866,15 +918,17 @@ def find_and_link_to_models(artifact_id: int, artifact_type: str, artifact_name:
                 VALUES (%s, %s, %s, %s, %s, 'auto_discovered')
                 ON CONFLICT DO NOTHING;
                 """,
-                (model['id'], artifact_id, model.get('name'), artifact_name, dep_type),
-                fetch=False
+                (model["id"], artifact_id, model.get("name"), artifact_name, dep_type),
+                fetch=False,
             )
             links_created += 1
-            linked_model_ids.append(model['id'])
-            linked_models_info.append({"id": model['id'], "name": model.get('name')})
+            linked_model_ids.append(model["id"])
+            linked_models_info.append({"id": model["id"], "name": model.get("name")})
             if dep_type in DEPENDENCY_CAP_TYPES:
-                dependency_state.setdefault(model['id'], set()).add(dep_type)
-            print(f"[DEPENDENCY] Linked {artifact_name} -> model {model['id']} as {dep_type} (score={matched_score:.3f}) [exclusive]")
+                dependency_state.setdefault(model["id"], set()).add(dep_type)
+            print(
+                f"[DEPENDENCY] Linked {artifact_name} -> model {model['id']} as {dep_type} (score={matched_score:.3f}) [exclusive]"
+            )
         except Exception as e:
             print(f"[DEPENDENCY] Failed to link exclusive code: {e}")
 
@@ -894,41 +948,42 @@ def cascade_dataset_links(models: list, dataset_names: list, dependency_state=No
     After linking code repo to models, link datasets mentioned in code README to same models.
     This creates the chain: dataset -> model (via code repo connection).
     """
-    dependency_type = 'dataset'
-    model_ids = [m.get('id') for m in models if m.get('id') is not None]
-    print(f"[DEPENDENCY CASCADE] Linking datasets {dataset_names} to models {model_ids}...")
+    dependency_type = "dataset"
+    model_ids = [m.get("id") for m in models if m.get("id") is not None]
+    print(
+        f"[DEPENDENCY CASCADE] Linking datasets {dataset_names} to models {model_ids}..."
+    )
 
     if dependency_state is None:
         dependency_state = load_dependency_state(model_ids, (dependency_type,))
     else:
         for model_id in model_ids:
             dependency_state.setdefault(model_id, set())
-    
+
     # Find all dataset artifacts in database
     all_datasets = run_query(
-        "SELECT id, name, source_url FROM artifacts WHERE type = 'dataset';",
-        fetch=True
+        "SELECT id, name, source_url FROM artifacts WHERE type = 'dataset';", fetch=True
     )
-    
+
     if not all_datasets:
         print("[DEPENDENCY CASCADE] No datasets found")
         return
-    
+
     links_created = 0
-    
+
     for dataset in all_datasets:
-        dataset_id = dataset['id']
-        dataset_name = dataset['name']
-        dataset_url = dataset.get('source_url', '')
-        
+        dataset_id = dataset["id"]
+        dataset_name = dataset["name"]
+        dataset_url = dataset.get("source_url", "")
+
         # Check if this dataset matches any dataset mentioned in code README
         for mentioned_ds in dataset_names:
             score = compute_identifier_score(dataset_name, dataset_url, mentioned_ds)
             if score >= DATASET_LINK_THRESHOLD:
                 # Link this dataset to all models that the code repo is linked to
                 for model_info in models:
-                    model_id = model_info.get('id')
-                    model_name = model_info.get('name')
+                    model_id = model_info.get("id")
+                    model_name = model_info.get("name")
                     if model_id is None:
                         continue
                     already_has_dataset = False
@@ -937,7 +992,9 @@ def cascade_dataset_links(models: list, dataset_names: list, dependency_state=No
                         if dependency_type in existing_types:
                             already_has_dataset = True
                     if already_has_dataset:
-                        print(f"[DEPENDENCY CASCADE] Model {model_id} already has a {dependency_type}; skipping")
+                        print(
+                            f"[DEPENDENCY CASCADE] Model {model_id} already has a {dependency_type}; skipping"
+                        )
                         continue
 
                     try:
@@ -948,19 +1005,29 @@ def cascade_dataset_links(models: list, dataset_names: list, dependency_state=No
                             VALUES (%s, %s, %s, %s, %s, 'cascaded_from_code')
                             ON CONFLICT DO NOTHING;
                             """,
-                            (model_id, dataset_id, model_name, dataset_name, dependency_type),
-                            fetch=False
+                            (
+                                model_id,
+                                dataset_id,
+                                model_name,
+                                dataset_name,
+                                dependency_type,
+                            ),
+                            fetch=False,
                         )
                         links_created += 1
                         if model_id is not None:
-                            dependency_state.setdefault(model_id, set()).add(dependency_type)
-                        print(f"[DEPENDENCY CASCADE] Linked dataset {dataset_name} -> model {model_id} (score={score:.3f})")
+                            dependency_state.setdefault(model_id, set()).add(
+                                dependency_type
+                            )
+                        print(
+                            f"[DEPENDENCY CASCADE] Linked dataset {dataset_name} -> model {model_id} (score={score:.3f})"
+                        )
                     except Exception as e:
                         print(f"[DEPENDENCY CASCADE] Failed: {e}")
                 break
-    
+
     print(f"[DEPENDENCY CASCADE] Created {links_created} cascaded dataset links")
-    
+
     # Recalculate ratings for affected models
     if links_created > 0 and model_ids:
         recalculate_model_ratings(model_ids)
@@ -972,58 +1039,64 @@ def recalculate_model_ratings(model_ids: list):
     Preserves other expensive metrics (performance, reproducibility) from original rating.
     """
     from submetrics import DatasetQualityMetric, CodeQualityMetric
-    
+
     for model_id in model_ids:
         try:
             model_result = run_query(
                 "SELECT id, metadata, ratings FROM artifacts WHERE id = %s;",
                 (model_id,),
-                fetch=True
+                fetch=True,
             )
-            
+
             if not model_result:
                 continue
-            
+
             model = model_result[0]
-            
+
             # Parse metadata and ratings (handle both dict and JSON string)
-            metadata = model.get('metadata', {})
+            metadata = model.get("metadata", {})
             if isinstance(metadata, str):
                 metadata = json.loads(metadata)
-            
-            ratings = model.get('ratings', {})
+
+            ratings = model.get("ratings", {})
             if isinstance(ratings, str):
                 ratings = json.loads(ratings)
-            
+
             # Add model ID for queries
-            metadata['id'] = model_id
-            
+            metadata["id"] = model_id
+
             # Recalculate only dependency-related metrics
             dataset_metric = DatasetQualityMetric()
             code_metric = CodeQualityMetric()
-            
-            ratings['dataset_quality'] = dataset_metric.calculate_metric(metadata)
-            ratings['code_quality'] = code_metric.calculate_metric(metadata)
-            
+
+            ratings["dataset_quality"] = dataset_metric.calculate_metric(metadata)
+            ratings["code_quality"] = code_metric.calculate_metric(metadata)
+
             # Recalculate net_score with updated metrics (all weights are 0.125)
             net_score = 0.0
             for key, value in ratings.items():
-                if key.endswith('_latency') or key in ['net_score', 'net_score_latency', 'category']:
+                if key.endswith("_latency") or key in [
+                    "net_score",
+                    "net_score_latency",
+                    "category",
+                ]:
                     continue
                 if isinstance(value, dict):
-                    net_score += (sum(value.values()) / len(value) if value else 0.0) * 0.125
+                    net_score += (
+                        sum(value.values()) / len(value) if value else 0.0
+                    ) * 0.125
                 else:
                     net_score += float(value) * 0.125
-            
-            ratings['net_score'] = round(net_score, 3)
-            
+
+            ratings["net_score"] = round(net_score, 3)
+
             # Update database
             run_query(
                 "UPDATE artifacts SET ratings = %s, net_score = %s WHERE id = %s;",
-                (json.dumps(ratings), ratings['net_score'], model_id),
-                fetch=False
+                (json.dumps(ratings), ratings["net_score"], model_id),
+                fetch=False,
             )
-            
+
         except Exception as e:
             print(f"[RATING UPDATE] Failed for model {model_id}: {e}")
 
@@ -1040,14 +1113,20 @@ def log_event(event, context):  # <<< LOGGING
 
     print("==== CONTEXT ====")
     try:
-        print(json.dumps({
-            "aws_request_id": context.aws_request_id,
-            "function_name": context.function_name,
-            "memory_limit_in_mb": context.memory_limit_in_mb,
-            "function_version": context.function_version
-        }, indent=2))
+        print(
+            json.dumps(
+                {
+                    "aws_request_id": context.aws_request_id,
+                    "function_name": context.function_name,
+                    "memory_limit_in_mb": context.memory_limit_in_mb,
+                    "function_version": context.function_version,
+                },
+                indent=2,
+            )
+        )
     except:
         pass
+
 
 def log_response(response):  # <<< LOGGING
     print("==== OUTGOING RESPONSE ====")
@@ -1055,6 +1134,7 @@ def log_response(response):  # <<< LOGGING
         print(json.dumps(response, indent=2))
     except:
         print(response)
+
 
 def log_exception(e):  # <<< LOGGING
     print("==== EXCEPTION OCCURRED ====")
@@ -1074,13 +1154,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         body = json.loads(event.get("body", "{}"))
         url = body.get("url")
         provided_name = body.get("name")
-        
+
         # NEW: Accept optional relationship info
-        related_model_id = body.get("related_model_id")  # For datasets/code that belong to a model
-        relationship_type = body.get("relationship_type")  # e.g., "dataset", "code", "fine_tuning_dataset"
-        
+        related_model_id = body.get(
+            "related_model_id"
+        )  # For datasets/code that belong to a model
+        relationship_type = body.get(
+            "relationship_type"
+        )  # e.g., "dataset", "code", "fine_tuning_dataset"
+
         artifact_type = event.get("pathParameters", {}).get("artifact_type")
-        
 
         # --------------------------
         # 2. Validate request
@@ -1088,7 +1171,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         if not url or not artifact_type:
             response = {
                 "statusCode": 400,
-                "body": json.dumps({"error": "Missing URL or artifact_type"})
+                "body": json.dumps({"error": "Missing URL or artifact_type"}),
             }
             log_response(response)  # <<< LOGGING
             return response
@@ -1097,13 +1180,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         url_handler_temp = URLHandler()
         parsed_data = url_handler_temp.handle_url(url)
         identifier = parsed_data.unique_identifier
-        
+
         # >>> MINIMAL CHANGE: type-aware URL validation <<<
         if not identifier:
-            response = {
-                "statusCode": 400,
-                "body": json.dumps({"error": "Invalid URL"})
-            }
+            response = {"statusCode": 400, "body": json.dumps({"error": "Invalid URL"})}
             log_response(response)  # <<< LOGGING
             return response
 
@@ -1112,7 +1192,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             if not isinstance(provided_name, str) or not provided_name.strip():
                 response = {
                     "statusCode": 400,
-                    "body": json.dumps({"error": "Invalid name"})
+                    "body": json.dumps({"error": "Invalid name"}),
                 }
                 log_response(response)  # <<< LOGGING
                 return response
@@ -1124,15 +1204,23 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             if parsed_data.category != URLCategory.HUGGINGFACE:
                 response = {
                     "statusCode": 400,
-                    "body": json.dumps({"error": "Model must use a Hugging Face URL"})
+                    "body": json.dumps({"error": "Model must use a Hugging Face URL"}),
                 }
                 log_response(response)  # <<< LOGGING
                 return response
         elif artifact_type == "dataset":
-            if parsed_data.category not in (URLCategory.HUGGINGFACE, URLCategory.GITHUB, URLCategory.KAGGLE):
+            if parsed_data.category not in (
+                URLCategory.HUGGINGFACE,
+                URLCategory.GITHUB,
+                URLCategory.KAGGLE,
+            ):
                 response = {
                     "statusCode": 400,
-                    "body": json.dumps({"error": "Dataset must use a Hugging Face, GitHub, or Kaggle URL"})
+                    "body": json.dumps(
+                        {
+                            "error": "Dataset must use a Hugging Face, GitHub, or Kaggle URL"
+                        }
+                    ),
                 }
                 log_response(response)  # <<< LOGGING
                 return response
@@ -1140,14 +1228,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             if parsed_data.category != URLCategory.GITHUB:
                 response = {
                     "statusCode": 400,
-                    "body": json.dumps({"error": "Code artifacts must use a GitHub URL"})
+                    "body": json.dumps(
+                        {"error": "Code artifacts must use a GitHub URL"}
+                    ),
                 }
                 log_response(response)  # <<< LOGGING
                 return response
         else:
             response = {
                 "statusCode": 400,
-                "body": json.dumps({"error": "Invalid artifact_type"})
+                "body": json.dumps({"error": "Invalid artifact_type"}),
             }
             log_response(response)  # <<< LOGGING
             return response
@@ -1158,16 +1248,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         check_result = run_query(
             "SELECT id FROM artifacts WHERE source_url = %s AND type = %s;",
             (url, artifact_type),
-            fetch=True
+            fetch=True,
         )
 
         if check_result:
             response = {
                 "statusCode": 409,
-                "body": json.dumps({
-                    "error": "Artifact already exists",
-                    "id": check_result[0]['id']
-                })
+                "body": json.dumps(
+                    {"error": "Artifact already exists", "id": check_result[0]["id"]}
+                ),
             }
             log_response(response)  # <<< LOGGING
             return response
@@ -1178,7 +1267,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         url_handler = URLHandler()
         data_retriever = DataRetriever(
             github_token=os.environ.get("GITHUB_TOKEN"),
-            hf_token=os.environ.get("HF_TOKEN")
+            hf_token=os.environ.get("HF_TOKEN"),
         )
 
         model_obj: URLData = url_handler.handle_url(url)
@@ -1186,7 +1275,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         if not model_obj.is_valid:
             response = {
                 "statusCode": 400,
-                "body": json.dumps({"error": "URL is not valid"})
+                "body": json.dumps({"error": "URL is not valid"}),
             }
             log_response(response)  # <<< LOGGING
             return response
@@ -1195,15 +1284,23 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             if model_obj.category != URLCategory.HUGGINGFACE:
                 response = {
                     "statusCode": 400,
-                    "body": json.dumps({"error": "Model must use a Hugging Face URL"})
+                    "body": json.dumps({"error": "Model must use a Hugging Face URL"}),
                 }
                 log_response(response)  # <<< LOGGING
                 return response
         elif artifact_type == "dataset":
-            if model_obj.category not in (URLCategory.HUGGINGFACE, URLCategory.GITHUB, URLCategory.KAGGLE):
+            if model_obj.category not in (
+                URLCategory.HUGGINGFACE,
+                URLCategory.GITHUB,
+                URLCategory.KAGGLE,
+            ):
                 response = {
                     "statusCode": 400,
-                    "body": json.dumps({"error": "Dataset must use a Hugging Face, GitHub, or Kaggle URL"})
+                    "body": json.dumps(
+                        {
+                            "error": "Dataset must use a Hugging Face, GitHub, or Kaggle URL"
+                        }
+                    ),
                 }
                 log_response(response)  # <<< LOGGING
                 return response
@@ -1211,17 +1308,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             if model_obj.category != URLCategory.GITHUB:
                 response = {
                     "statusCode": 400,
-                    "body": json.dumps({"error": "URL is not a valid GitHub URL"})
+                    "body": json.dumps({"error": "URL is not a valid GitHub URL"}),
                 }
                 log_response(response)  # <<< LOGGING
                 return response
 
         repo_data = data_retriever.retrieve_data(model_obj)
 
-        model_dict = {
-            **repo_data.__dict__,
-            "name": artifact_name
-        }
+        model_dict = {**repo_data.__dict__, "name": artifact_name}
 
         # Only calculate metrics for models
         if artifact_type == "model":
@@ -1234,70 +1328,23 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         metadata_dict = repo_data.__dict__.copy()
         metadata_dict["requested_name"] = artifact_name
-        if metadata_dict.get('created_at'):
-            metadata_dict['created_at'] = metadata_dict['created_at'].isoformat()
-        if metadata_dict.get('updated_at'):
-            metadata_dict['updated_at'] = metadata_dict['updated_at'].isoformat()
-        
+        if metadata_dict.get("created_at"):
+            metadata_dict["created_at"] = metadata_dict["created_at"].isoformat()
+        if metadata_dict.get("updated_at"):
+            metadata_dict["updated_at"] = metadata_dict["updated_at"].isoformat()
+
         # Extract dataset/code dependencies for models (separate from lineage)
         if artifact_type == "model":
-            readme_text = metadata_dict.get('readme', '')
+            readme_text = metadata_dict.get("readme", "")
             if readme_text:
                 print(f"[DEPENDENCY] Extracting dependencies from model README...")
                 dependencies = extract_artifact_dependencies(readme_text)
                 if dependencies and any(dependencies.values()):
-                    metadata_dict['expected_dependencies'] = dependencies
+                    metadata_dict["expected_dependencies"] = dependencies
                     print(f"[DEPENDENCY] Stored: {dependencies}")
-        
-        metadata_json = json.dumps(metadata_dict)
 
         # --------------------------
-        # 6. Insert as upload_pending with download_url
-        # --------------------------
-        # First get the artifact_id, then construct download_url
-        result = run_query(
-            """
-            INSERT INTO artifacts (type, name, source_url, net_score, ratings, status, metadata)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            RETURNING id;
-            """,
-            (
-                artifact_type,
-                artifact_name,
-                url,
-                net_score,
-                json.dumps(rating),
-                "upload_pending",
-                metadata_json
-            ),
-            fetch=True
-        )
-
-        artifact_id = result[0]['id']
-
-        # Generate proper S3 HTTPS URL immediately
-        download_url = f"https://{S3_BUCKET}.s3.us-east-1.amazonaws.com/{artifact_type}/{artifact_id}/"
-        
-        # Update the artifact with download_url
-        run_query(
-            """
-            UPDATE artifacts
-            SET download_url = %s
-            WHERE id = %s;
-            """,
-            (download_url, artifact_id),
-            fetch=False
-        )
-
-        # --------------------------
-        # 6a. Link dataset/code to models (uses artifact_dependencies table)
-        # --------------------------
-        if artifact_type in ("dataset", "code"):
-            readme_for_code = metadata_dict.get('readme', '') if artifact_type == "code" else ""
-            find_and_link_to_models(artifact_id, artifact_type, artifact_name, url, readme_for_code)
-
-        # --------------------------
-        # 6b. Auto-extract MODEL lineage from config.json (uses artifact_relationships table)
+        # 4b. Auto-extract MODEL lineage from config.json (uses artifact_relationships table)
         # --------------------------
 
         auto_relationships = []
@@ -1318,9 +1365,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
             # Try to find parent artifact in DB by name
             parent_query = run_query(
-                "SELECT id FROM artifacts WHERE name = %s;",
-                (parent_name,),
-                fetch=True
+                "SELECT id FROM artifacts WHERE name = %s;", (parent_name,), fetch=True
             )
             print(f"[AUTOGRADER DEBUG] add_auto_rel parent query:", parent_query)
             if parent_query and parent_query[0]:
@@ -1337,24 +1382,28 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     ON CONFLICT DO NOTHING;
                     """,
                     (from_id, to_id, relationship_type, "config_json"),
-                    fetch=False
+                    fetch=False,
                 )
 
                 # Save into metadata for debugging / lineage lambda
-                auto_relationships.append({
-                    "artifact_id": parent_id,
-                    "relationship": relationship_type,
-                    "direction": "from"
-                })
+                auto_relationships.append(
+                    {
+                        "artifact_id": parent_id,
+                        "relationship": relationship_type,
+                        "direction": "from",
+                    }
+                )
 
             else:
                 # Parent isn't an artifact we know — save placeholder
-                auto_relationships.append({
-                    "artifact_id": parent_name,
-                    "relationship": relationship_type,
-                    "direction": "from",
-                    "placeholder": True
-                })
+                auto_relationships.append(
+                    {
+                        "artifact_id": parent_name,
+                        "relationship": relationship_type,
+                        "direction": "from",
+                        "placeholder": True,
+                    }
+                )
 
         # ---- RULE 1: PEFT / LoRA / Adapter ----
         if "base_model_name_or_path" in config:
@@ -1387,54 +1436,109 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             metadata_dict["auto_lineage"] = auto_relationships
 
         # --------------------------
-        # 6b. Create lineage relationship if provided
+        # 4c. Create lineage relationship if provided
         # --------------------------
         if related_model_id and relationship_type:
             check_model = run_query(
                 "SELECT id, type FROM artifacts WHERE id = %s;",
                 (related_model_id,),
-                fetch=True
+                fetch=True,
             )
-            
+
             if check_model:
-                if artifact_type in ("dataset", "code"):
-                    from_id = artifact_id
-                    to_id = related_model_id
-                elif artifact_type == "model":
+                # if artifact_type in ("dataset", "code"):
+                if artifact_type == "model":
                     from_id = related_model_id
                     to_id = artifact_id
-                else:
-                    from_id = artifact_id
-                    to_id = related_model_id
-                
-                run_query(
-                    """
+                    run_query(
+                        """
                     INSERT INTO artifact_relationships (from_artifact_id, to_artifact_id, relationship_type, source)
                     VALUES (%s, %s, %s, %s)
                     ON CONFLICT (from_artifact_id, to_artifact_id, relationship_type) DO NOTHING;
                     """,
-                    (from_id, to_id, relationship_type, "user_provided"),
-                    fetch=False
+                        (from_id, to_id, relationship_type, "user_provided"),
+                        fetch=False,
+                    )
+
+                metadata_dict["related_artifacts"] = metadata_dict.get(
+                    "related_artifacts", []
+                )
+                metadata_dict["related_artifacts"].append(
+                    {
+                        "artifact_id": related_model_id,
+                        "relationship": relationship_type,
+                        "direction": (
+                            "to" if artifact_type in ("dataset", "code") else "from"
+                        ),
+                    }
                 )
 
-                metadata_dict["related_artifacts"] = metadata_dict.get("related_artifacts", [])
-                metadata_dict["related_artifacts"].append({
-                    "artifact_id": related_model_id,
-                    "relationship": relationship_type,
-                    "direction": "to" if artifact_type in ("dataset", "code") else "from"
-                })
+        metadata_json = json.dumps(metadata_dict)
+
+        # --------------------------
+        # 6. Insert as upload_pending with download_url
+        # --------------------------
+        # First get the artifact_id, then construct download_url
+        result = run_query(
+            """
+            INSERT INTO artifacts (type, name, source_url, net_score, ratings, status, metadata)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING id;
+            """,
+            (
+                artifact_type,
+                artifact_name,
+                url,
+                net_score,
+                json.dumps(rating),
+                "upload_pending",
+                metadata_json,
+            ),
+            fetch=True,
+        )
+
+        artifact_id = result[0]["id"]
+
+        # Generate proper S3 HTTPS URL immediately
+        download_url = f"https://{S3_BUCKET}.s3.us-east-1.amazonaws.com/{artifact_type}/{artifact_id}/"
+
+        # Update the artifact with download_url
+        run_query(
+            """
+            UPDATE artifacts
+            SET download_url = %s
+            WHERE id = %s;
+            """,
+            (download_url, artifact_id),
+            fetch=False,
+        )
+
+        # --------------------------
+        # 6a. Link dataset/code to models (uses artifact_dependencies table)
+        # --------------------------
+        if artifact_type in ("dataset", "code"):
+            readme_for_code = (
+                metadata_dict.get("readme", "") if artifact_type == "code" else ""
+            )
+            find_and_link_to_models(
+                artifact_id, artifact_type, artifact_name, url, readme_for_code
+            )
+
+        
 
         # --------------------------
         # 7. Send SQS message to ECS ingest worker
         # --------------------------
         sqs_client.send_message(
             QueueUrl=os.environ.get("INGEST_QUEUE_URL"),
-            MessageBody=json.dumps({
-                "artifact_id": artifact_id,
-                "artifact_type": artifact_type,
-                "identifier": identifier,
-                "source_url": url
-            })
+            MessageBody=json.dumps(
+                {
+                    "artifact_id": artifact_id,
+                    "artifact_type": artifact_type,
+                    "identifier": identifier,
+                    "source_url": url,
+                }
+            ),
         )
 
         # --------------------------
@@ -1442,17 +1546,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # --------------------------
         response = {
             "statusCode": 201,
-            "body": json.dumps({
-                "metadata": {
-                    "name": artifact_name,
-                    "id": artifact_id,
-                    "type": artifact_type
-                },
-                "data": {
-                    "url": url,
-                    "download_url": download_url
+            "body": json.dumps(
+                {
+                    "metadata": {
+                        "name": artifact_name,
+                        "id": artifact_id,
+                        "type": artifact_type,
+                    },
+                    "data": {"url": url, "download_url": download_url},
                 }
-            })
+            ),
         }
 
         log_response(response)  # <<< LOGGING
@@ -1460,9 +1563,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
     except Exception as e:
         log_exception(e)  # <<< LOGGING
-        response = {
-            "statusCode": 500,
-            "body": json.dumps({"error": str(e)})
-        }
+        response = {"statusCode": 500, "body": json.dumps({"error": str(e)})}
         log_response(response)  # <<< LOGGING
         return response

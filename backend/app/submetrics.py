@@ -298,25 +298,25 @@ class RampUpMetric(Metric):
 
             base_score = 0.0
             if readme_present:
-                base_score += 0.20  # Adjusted from 0.15
+                base_score += 0.25
             if model_info.get("description"):
-                base_score += 0.07  # Adjusted from 0.05
+                base_score += 0.1
             if model_info.get("tags"):
-                base_score += 0.04  # Adjusted from 0.03
-            score += min(0.30, base_score)  # Adjusted max from 0.25
+                base_score += 0.05
+            score += min(0.4, base_score)
             print(
                 f"[RAMP_UP] Start metric={self.name} model_id={model_info.get('id')} "
                 f"readme_present={readme_present} readme_length={len(readme_text or '')} "
                 f"base_score={score:.3f}"
             )
             
-            # Check for README quality (65% of score)
+            # Check for README quality (70% of score)
             readme_score = self._evaluate_readme(readme_text)
-            score += readme_score * 0.50  # Reduced from 0.55
+            score += readme_score * 0.55
             
-            # Check for clear model card/description (25% of score)
+            # Check for clear model card/description (30% of score)
             card_score = self._evaluate_model_card(model_info)
-            score += card_score * 0.25  # Reduced from 0.35
+            score += card_score * 0.35
             
             self._latency = int((time.time() - start_time) * 1000)
             final_score = min(1.0, score)
@@ -341,25 +341,28 @@ class RampUpMetric(Metric):
             return 0.0
         
         readme_lower = readme.lower()
-        score = 0.25  # Reasonable baseline
+        score = 0.25  # higher baseline credit for any README content
         reasons: List[str] = ["baseline +0.25"]
         
         # Check for key sections
         if "usage" in readme_lower or "how to use" in readme_lower:
-            score += 0.25
-            reasons.append("usage +0.25")
-        if "example" in readme_lower or "```python" in readme_lower or "```" in readme_lower:
-            score += 0.25
-            reasons.append("examples +0.25")
-        if "install" in readme_lower or "pip" in readme_lower:
-            score += 0.15
-            reasons.append("install +0.15")
+            score += 0.3
+            reasons.append("usage +0.3")
+        if "example" in readme_lower or "```python" in readme_lower:
+            score += 0.3
+            reasons.append("examples +0.3")
+        if "install" in readme_lower:
+            score += 0.2
+            reasons.append("install +0.2")
         if any(term in readme_lower for term in ["quickstart", "getting started", "setup"]):
-            score += 0.10
-            reasons.append("onboarding +0.10")
+            score += 0.15
+            reasons.append("onboarding +0.15")
         if len(readme) > 300:
-            score += 0.10
-            reasons.append("length>300 +0.10")
+            score += 0.15
+            reasons.append("length>300 +0.15")
+        if len(readme) > 1200:
+            score += 0.1
+            reasons.append("length>1200 +0.1")
         print(
             f"[RAMP_UP][README] reasons={reasons or ['none']} subtotal={min(1.0, score):.3f}"
         )
@@ -575,11 +578,11 @@ class AvailableScoreMetric(Metric):
             
             # Dataset documentation (50% of score)
             dataset_score = self._evaluate_dataset_info(model_info)
-            score += dataset_score * 0.50
+            score += dataset_score * 0.5
             
             # Code availability (50% of score)
             code_score = self._evaluate_code_availability(model_info)
-            score += code_score * 0.50
+            score += code_score * 0.5
             
             self._latency = int((time.time() - start_time) * 1000)
             return min(1.0, score)
@@ -595,13 +598,13 @@ class AvailableScoreMetric(Metric):
         # Check for dataset tags/metadata
         datasets = model_info.get("datasets")
         if datasets:
-            score += 0.25  # Reduced from 0.3
+            score += 0.4
         
         # Check README for dataset information
         readme = (model_info.get("readme") or "").lower()
         dataset_terms = ["dataset", "training data", "trained on", "corpus", "data", "pretraining", "fine-tuned", "benchmark"]
         if any(term in readme for term in dataset_terms):
-            score += 0.15  # Reduced from 0.2
+            score += 0.3
         
         # Check tags for dataset information
         tags = model_info.get("tags", [])
@@ -670,40 +673,31 @@ class DatasetQualityMetric(Metric):
         start_time = time.time()
         
         try:
-            score = 0.25  # Moderate baseline
-            readme = (model_info.get("readme") or "").lower()
-            
-            # Weight important terms more heavily
-            high_value_terms = ["training data", "trained on", "fine-tuned on"]
-            medium_value_terms = ["dataset", "corpus", "benchmark"]
-            
-            high_matches = sum(1 for term in high_value_terms if term in readme)
-            medium_matches = sum(1 for term in medium_value_terms if term in readme)
-            
-            score += high_matches * 0.15
-            score += medium_matches * 0.10
-            
-            # Check for dataset metadata
-            datasets = model_info.get("datasets")
-            if datasets:
-                score += 0.25
-            
-            # Check description for dataset info
-            description = (model_info.get("description") or "").lower()
-            if description:
-                if any(term in description for term in high_value_terms):
-                    score += 0.15
-                elif any(term in description for term in medium_value_terms):
-                    score += 0.10
-            
-            # Check tags for dataset information
-            tags = model_info.get("tags", [])
-            dataset_tags = ["dataset", "corpus", "benchmark", "evaluation"]
-            if any(any(tag_term in str(tag or "").lower() for tag_term in dataset_tags) for tag in tags):
-                score += 0.10
+            # Check if this model has any linked datasets in artifact_dependencies table
+            model_id = model_info.get('id')
+            if model_id:
+                from rds_connection import run_query
+                
+                # Query for linked datasets
+                linked_datasets = run_query(
+                    """
+                    SELECT COUNT(*) as dataset_count
+                    FROM artifact_dependencies
+                    WHERE model_id = %s AND dependency_type = 'dataset';
+                    """,
+                    (model_id,),
+                    fetch=True
+                )
+                
+                if linked_datasets and linked_datasets[0]['dataset_count'] > 0:
+                    score = 1.0
+                else:
+                    score = 0.0
+            else:
+                score = 0.0
             
             self._latency = int((time.time() - start_time) * 1000)
-            return min(1.0, score)
+            return score
             
         except Exception as e:
             self._latency = int((time.time() - start_time) * 1000)
@@ -725,36 +719,31 @@ class CodeQualityMetric(Metric):
         start_time = time.time()
         
         try:
-            score = 0.30  # Moderate baseline
-            readme = (model_info.get("readme") or "").lower()
-            
-            # High-value code indicators
-            high_value = ["```python", "from transformers", "import torch"]
-            medium_value = ["usage", "example", "tokenizer", "model.generate"]
-            
-            high_matches = sum(1 for indicator in high_value if indicator in readme)
-            medium_matches = sum(1 for indicator in medium_value if indicator in readme)
-            
-            score += high_matches * 0.15
-            score += medium_matches * 0.08
-            
-            # Check for actual model files
-            files = model_info.get("siblings", [])
-            if files:
-                essential_files = ["config.json", ".safetensors", "pytorch_model", "tokenizer"]
-                file_count = sum(
-                    1 for f in files
-                    if any(essential in str(f.get("rfilename") or "").lower() 
-                           for essential in essential_files)
+            # Check if this model has any linked code repositories in artifact_dependencies table
+            model_id = model_info.get('id')
+            if model_id:
+                from rds_connection import run_query
+                
+                # Query for linked code repos
+                linked_code = run_query(
+                    """
+                    SELECT COUNT(*) as code_count
+                    FROM artifact_dependencies
+                    WHERE model_id = %s AND dependency_type = 'code';
+                    """,
+                    (model_id,),
+                    fetch=True
                 )
-                score += min(file_count * 0.10, 0.30)
-            
-            # Bonus for good documentation
-            if len(readme) > 800:
-                score += 0.10
+                
+                if linked_code and linked_code[0]['code_count'] > 0:
+                    score = 1.0
+                else:
+                    score = 0.0
+            else:
+                score = 0.0
             
             self._latency = int((time.time() - start_time) * 1000)
-            return min(1.0, score)
+            return score
             
         except Exception as e:
             self._latency = int((time.time() - start_time) * 1000)
@@ -796,19 +785,12 @@ OUTPUT REQUIREMENTS:
         start_time = time.time()
         
         try:
-            readme = model_info.get("readme", "")
-            readme_lower = readme.lower()
             
-            # Quick heuristic check first
-            performance_terms = ["accuracy", "benchmark", "evaluation", "metric", 
-                               "performance", "score", "result"]
-            has_metrics = any(term in readme_lower for term in performance_terms)
+            score = 0.0
             
-            if not has_metrics:
-                score = 0.0
-            else:
-                # Have AI evaluate performance documentation quality
-                score = self._evaluate_performance_in_readme(readme)
+            # Have AI check README for performance metrics 
+            readme_score = self._evaluate_performance_in_readme(model_info.get("readme", ""))
+            score += readme_score
 
             self._latency = int((time.time() - start_time) * 1000)
             return score

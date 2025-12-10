@@ -990,7 +990,7 @@ Resources:
                   required: true
                 - name: X-Authorization
                   in: header
-                  required: false
+                  required: true
               responses:
                 "201":
                   description: Artifact created
@@ -1019,7 +1019,7 @@ Resources:
                   schema:
                     $ref: "#/components/schemas/AuthenticationToken"
                   in: header
-                  required: false
+                  required: true
               responses:
                 "200":
                   content:
@@ -1067,7 +1067,7 @@ Resources:
                   schema:
                     $ref: "#/components/schemas/AuthenticationToken"
                   in: header
-                  required: false
+                  required: true
               requestBody:
                 content:
                   application/json:
@@ -1127,7 +1127,7 @@ Resources:
                   required: true
                 - name: X-Authorization
                   in: header
-                  required: false
+                  required: true
                   schema:
                     type: string
               responses:
@@ -1166,7 +1166,7 @@ Resources:
                     type: string
                 - name: X-Authorization
                   in: header
-                  required: false
+                  required: true
                   schema:
                     type: string
               responses:
@@ -1214,7 +1214,7 @@ Resources:
                     default: false
                 - name: X-Authorization
                   in: header
-                  required: false
+                  required: true
                   schema:
                     type: string
               responses:
@@ -1267,7 +1267,7 @@ Resources:
                   schema:
                     $ref: "#/components/schemas/AuthenticationToken"
                   in: header
-                  required: false
+                  required: true
               responses:
                 "200":
                   content:
@@ -1318,6 +1318,10 @@ Resources:
             RestApiId: !Ref ece461Ph2Api
       Policies:
         - AWSLambdaBasicExecutionRole
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:DB_CREDS-*
 
   HealthLambda:
     Type: AWS::Serverless::Function

@@ -1343,8 +1343,60 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     metadata_dict["expected_dependencies"] = dependencies
                     print(f"[DEPENDENCY] Stored: {dependencies}")
 
+        
+        metadata_json = json.dumps(metadata_dict)
+
         # --------------------------
-        # 4b. Auto-extract MODEL lineage from config.json (uses artifact_relationships table)
+        # 6. Insert as upload_pending with download_url
+        # --------------------------
+        # First get the artifact_id, then construct download_url
+        result = run_query(
+            """
+            INSERT INTO artifacts (type, name, source_url, net_score, ratings, status, metadata)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING id;
+            """,
+            (
+                artifact_type,
+                artifact_name,
+                url,
+                net_score,
+                json.dumps(rating),
+                "upload_pending",
+                metadata_json,
+            ),
+            fetch=True,
+        )
+
+        artifact_id = result[0]["id"]
+
+        # Generate proper S3 HTTPS URL immediately
+        download_url = f"https://{S3_BUCKET}.s3.us-east-1.amazonaws.com/{artifact_type}/{artifact_id}/"
+
+        # Update the artifact with download_url
+        run_query(
+            """
+            UPDATE artifacts
+            SET download_url = %s
+            WHERE id = %s;
+            """,
+            (download_url, artifact_id),
+            fetch=False,
+        )
+
+        # --------------------------
+        # 6a. Link dataset/code to models (uses artifact_dependencies table)
+        # --------------------------
+        if artifact_type in ("dataset", "code"):
+            readme_for_code = (
+                metadata_dict.get("readme", "") if artifact_type == "code" else ""
+            )
+            find_and_link_to_models(
+                artifact_id, artifact_type, artifact_name, url, readme_for_code
+            )
+
+        # --------------------------
+        # 6b. Auto-extract MODEL lineage from config.json (uses artifact_relationships table)
         # --------------------------
 
         auto_relationships = []
@@ -1436,7 +1488,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             metadata_dict["auto_lineage"] = auto_relationships
 
         # --------------------------
-        # 4c. Create lineage relationship if provided
+        # 6c. Create lineage relationship if provided
         # --------------------------
         if related_model_id and relationship_type:
             check_model = run_query(
@@ -1473,58 +1525,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     }
                 )
 
-        metadata_json = json.dumps(metadata_dict)
-
-        # --------------------------
-        # 6. Insert as upload_pending with download_url
-        # --------------------------
-        # First get the artifact_id, then construct download_url
-        result = run_query(
-            """
-            INSERT INTO artifacts (type, name, source_url, net_score, ratings, status, metadata)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            RETURNING id;
-            """,
-            (
-                artifact_type,
-                artifact_name,
-                url,
-                net_score,
-                json.dumps(rating),
-                "upload_pending",
-                metadata_json,
-            ),
-            fetch=True,
-        )
-
-        artifact_id = result[0]["id"]
-
-        # Generate proper S3 HTTPS URL immediately
-        download_url = f"https://{S3_BUCKET}.s3.us-east-1.amazonaws.com/{artifact_type}/{artifact_id}/"
-
-        # Update the artifact with download_url
-        run_query(
-            """
-            UPDATE artifacts
-            SET download_url = %s
-            WHERE id = %s;
-            """,
-            (download_url, artifact_id),
-            fetch=False,
-        )
-
-        # --------------------------
-        # 6a. Link dataset/code to models (uses artifact_dependencies table)
-        # --------------------------
-        if artifact_type in ("dataset", "code"):
-            readme_for_code = (
-                metadata_dict.get("readme", "") if artifact_type == "code" else ""
-            )
-            find_and_link_to_models(
-                artifact_id, artifact_type, artifact_name, url, readme_for_code
-            )
-
-        
+        if auto_relationships or related_model_id:
+            run_query(
+                """
+                UPDATE artifacts
+                SET metadata = %s
+                WHERE id = %s;
+                """,
+                (json.dumps(metadata_dict), artifact_id), fetch=False
+                )
 
         # --------------------------
         # 7. Send SQS message to ECS ingest worker

@@ -53,7 +53,7 @@ class GitHubAPIClient:
                     platform="github",
                     identifier=f"{owner}/{repo}",
                     name=repo,
-                    success=True,
+                    success=False,
                     error_message="Rate limit exceeded"
                 )
             

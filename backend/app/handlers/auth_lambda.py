@@ -97,7 +97,12 @@ def lambda_handler(event, context):
         print(f"[AUTH] Error storing token: {e}")
         # Continue anyway - token is still valid even if storage fails
 
-    resp = response(200, f'bearer {token}')
+    # Return token as plain text, not JSON-encoded
+    resp = {
+        "statusCode": 200,
+        "body": f'bearer {token}',
+        "headers": {"Content-Type": "text/plain"}
+    }
     
     # Log the authentication event
     log_entry = {
@@ -120,5 +125,6 @@ def lambda_handler(event, context):
 def response(code, body_obj):
     return {
         "statusCode": code,
-        "body": json.dumps(body_obj)
+        "body": json.dumps(body_obj),
+        "headers": {"Content-Type": "application/json"}
     }

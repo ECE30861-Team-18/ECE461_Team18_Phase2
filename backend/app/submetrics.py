@@ -298,25 +298,25 @@ class RampUpMetric(Metric):
 
             base_score = 0.0
             if readme_present:
-                base_score += 0.25
+                base_score += 0.15  # Reduced from 0.25
             if model_info.get("description"):
-                base_score += 0.1
+                base_score += 0.05  # Reduced from 0.1
             if model_info.get("tags"):
-                base_score += 0.05
-            score += min(0.4, base_score)
+                base_score += 0.03  # Reduced from 0.05
+            score += min(0.25, base_score)  # Reduced max from 0.4
             print(
                 f"[RAMP_UP] Start metric={self.name} model_id={model_info.get('id')} "
                 f"readme_present={readme_present} readme_length={len(readme_text or '')} "
                 f"base_score={score:.3f}"
             )
             
-            # Check for README quality (70% of score)
+            # Check for README quality (65% of score)
             readme_score = self._evaluate_readme(readme_text)
-            score += readme_score * 0.55
+            score += readme_score * 0.50  # Reduced from 0.55
             
-            # Check for clear model card/description (30% of score)
+            # Check for clear model card/description (25% of score)
             card_score = self._evaluate_model_card(model_info)
-            score += card_score * 0.35
+            score += card_score * 0.25  # Reduced from 0.35
             
             self._latency = int((time.time() - start_time) * 1000)
             final_score = min(1.0, score)
@@ -341,13 +341,13 @@ class RampUpMetric(Metric):
             return 0.0
         
         readme_lower = readme.lower()
-        score = 0.25  # higher baseline credit for any README content
-        reasons: List[str] = ["baseline +0.25"]
+        score = 0.10  # Reduced baseline from 0.25
+        reasons: List[str] = ["baseline +0.10"]
         
         # Check for key sections
         if "usage" in readme_lower or "how to use" in readme_lower:
-            score += 0.3
-            reasons.append("usage +0.3")
+            score += 0.25  # Reduced from 0.3
+            reasons.append("usage +0.25")
         if "example" in readme_lower or "```python" in readme_lower:
             score += 0.3
             reasons.append("examples +0.3")
@@ -598,13 +598,13 @@ class AvailableScoreMetric(Metric):
         # Check for dataset tags/metadata
         datasets = model_info.get("datasets")
         if datasets:
-            score += 0.4
+            score += 0.3  # Reduced from 0.4
         
         # Check README for dataset information
         readme = (model_info.get("readme") or "").lower()
         dataset_terms = ["dataset", "training data", "trained on", "corpus", "data", "pretraining", "fine-tuned", "benchmark"]
         if any(term in readme for term in dataset_terms):
-            score += 0.3
+            score += 0.2  # Reduced from 0.3
         
         # Check tags for dataset information
         tags = model_info.get("tags", [])
@@ -690,9 +690,16 @@ class DatasetQualityMetric(Metric):
                 )
                 
                 if linked_datasets and linked_datasets[0]['dataset_count'] > 0:
-                    score = 1.0
+                    # Gradual scoring based on number of datasets
+                    count = linked_datasets[0]['dataset_count']
+                    score = min(0.3 + (count * 0.2), 0.8)  # 0.3 for 1 dataset, up to 0.8 max
                 else:
-                    score = 0.0
+                    # Give some credit for dataset mentions in README
+                    readme = (model_info.get("readme") or "").lower()
+                    if "dataset" in readme or "training data" in readme:
+                        score = 0.2
+                    else:
+                        score = 0.0
             else:
                 score = 0.0
             
@@ -736,9 +743,16 @@ class CodeQualityMetric(Metric):
                 )
                 
                 if linked_code and linked_code[0]['code_count'] > 0:
-                    score = 1.0
+                    # Gradual scoring based on number of code repos
+                    count = linked_code[0]['code_count']
+                    score = min(0.3 + (count * 0.2), 0.8)  # 0.3 for 1 repo, up to 0.8 max
                 else:
-                    score = 0.0
+                    # Give some credit for code examples in README
+                    readme = (model_info.get("readme") or "").lower()
+                    if "```python" in readme or "from transformers" in readme:
+                        score = 0.2
+                    else:
+                        score = 0.0
             else:
                 score = 0.0
             

@@ -1408,11 +1408,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Load config.json (stringified JSON)
         raw_config = metadata_dict.get("config")
         try:
+            print("[AUTOGRADER DEBUG LINEAGE] Raw config JSON for artifact", raw_config)
             config = json.loads(raw_config) if raw_config else {}
-            print("[AUTOGRADER DEBUG] Parsed config JSON for artifact", config)
+            print("[AUTOGRADER DEBUG LINEAGE] Parsed config JSON for artifact", config)
         except json.JSONDecodeError:
             config = {}
-            print("[AUTOGRADER DEBUG] Failed to parse config JSON for artifact")
+            print("[AUTOGRADER DEBUG LINEAGE] Failed to parse config JSON for artifact")
 
         # Helper: insert relationship into DB (if parent exists)
         def add_auto_rel(parent_name, relationship_type):
@@ -1423,7 +1424,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             parent_query = run_query(
                 "SELECT id FROM artifacts WHERE name = %s;", (parent_name,), fetch=True
             )
-            print(f"[AUTOGRADER DEBUG] add_auto_rel parent query:", parent_query)
+            print(f"[AUTOGRADER DEBUG LINEAGE] add_auto_rel parent query:", parent_query)
             if parent_query and parent_query[0]:
                 parent_id = parent_query[0]["id"]
                 from_id = parent_id
@@ -1463,30 +1464,30 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         # ---- RULE 1: PEFT / LoRA / Adapter ----
         if "base_model_name_or_path" in config:
-            print("[AUTOGRADER DEBUG] Found base_model_name_or_path:", config["base_model_name_or_path"])
+            print("[AUTOGRADER DEBUG LINEAGE] Found base_model_name_or_path:", config["base_model_name_or_path"])
             add_auto_rel(config["base_model_name_or_path"], "base_model")
 
         # ---- RULE 2: Fine-tuned / derived checkpoint ----
         # Note: Avoid self-referential loops
         if "_name_or_path" in config:
-            print("[AUTOGRADER DEBUG] Found _name_or_path:", config["_name_or_path"])
+            print("[AUTOGRADER DEBUG LINEAGE] Found _name_or_path:", config["_name_or_path"])
             val = config["_name_or_path"]
             if isinstance(val, str) and val != artifact_name:
                 add_auto_rel(val, "derived_from")
 
         # ---- RULE 3: finetuned_from ----
         if "finetuned_from" in config:
-            print("[AUTOGRADER DEBUG] Found finetuned_from:", config["finetuned_from"])
+            print("[AUTOGRADER DEBUG LINEAGE] Found finetuned_from:", config["finetuned_from"])
             add_auto_rel(config["finetuned_from"], "fine_tuned_from")
 
         # ---- RULE 4: Distillation teacher ----
         if "teacher" in config:
-            print("[AUTOGRADER DEBUG] Found teacher:", config["teacher"])
+            print("[AUTOGRADER DEBUG LINEAGE] Found teacher:", config["teacher"])
             add_auto_rel(config["teacher"], "teacher_model")
 
         # ---- RULE 5: PEFT type (LoRA, prefix-tuning, etc.) ----
         if "peft_type" in config:
-            print("[AUTOGRADER DEBUG] Found peft_type:", config["peft_type"])
+            print("[AUTOGRADER DEBUG LINEAGE] Found peft_type:", config["peft_type"])
             base = config.get("base_model_name_or_path")
             peft_type = config["peft_type"].lower()
             if base:
@@ -1500,6 +1501,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # 6c. Create lineage relationship if provided
         # --------------------------
         if related_model_id and relationship_type:
+            print("[LINEAGE] Creating user-provided relationship:", related_model_id, relationship_type)
             check_model = run_query(
                 "SELECT id, type FROM artifacts WHERE id = %s;",
                 (related_model_id,),

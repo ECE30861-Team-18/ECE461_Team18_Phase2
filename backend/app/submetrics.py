@@ -341,10 +341,10 @@ class RampUpMetric(Metric):
             return 0.0
         
         readme_lower = readme.lower()
-        score = 0.30  # Higher baseline - any README has value
-        reasons: List[str] = ["baseline +0.30"]
+        score = 0.25  # Reasonable baseline
+        reasons: List[str] = ["baseline +0.25"]
         
-        # Check for key sections - more generous scoring
+        # Check for key sections
         if "usage" in readme_lower or "how to use" in readme_lower:
             score += 0.25
             reasons.append("usage +0.25")
@@ -354,12 +354,12 @@ class RampUpMetric(Metric):
         if "install" in readme_lower or "pip" in readme_lower:
             score += 0.15
             reasons.append("install +0.15")
-        if any(term in readme_lower for term in ["quickstart", "getting started", "setup", "model"]):
+        if any(term in readme_lower for term in ["quickstart", "getting started", "setup"]):
             score += 0.10
             reasons.append("onboarding +0.10")
-        if len(readme) > 200:
+        if len(readme) > 300:
             score += 0.10
-            reasons.append("length>200 +0.10")
+            reasons.append("length>300 +0.10")
         print(
             f"[RAMP_UP][README] reasons={reasons or ['none']} subtotal={min(1.0, score):.3f}"
         )
@@ -575,11 +575,11 @@ class AvailableScoreMetric(Metric):
             
             # Dataset documentation (50% of score)
             dataset_score = self._evaluate_dataset_info(model_info)
-            score += dataset_score * 0.35  # More conservative
+            score += dataset_score * 0.50
             
             # Code availability (50% of score)
             code_score = self._evaluate_code_availability(model_info)
-            score += code_score * 0.35  # More conservative
+            score += code_score * 0.50
             
             self._latency = int((time.time() - start_time) * 1000)
             return min(1.0, score)
@@ -670,29 +670,31 @@ class DatasetQualityMetric(Metric):
         start_time = time.time()
         
         try:
-            # Start with generous baseline - most ML models have some dataset
-            score = 0.40
+            score = 0.25  # Moderate baseline
             readme = (model_info.get("readme") or "").lower()
             
-            # Check for dataset mentions in README - simpler, higher scoring
-            dataset_terms = ["training data", "dataset", "trained on", "fine-tuned", 
-                           "corpus", "benchmark", "evaluation", "data"]
+            # Weight important terms more heavily
+            high_value_terms = ["training data", "trained on", "fine-tuned on"]
+            medium_value_terms = ["dataset", "corpus", "benchmark"]
             
-            term_matches = sum(1 for term in dataset_terms if term in readme)
-            if term_matches >= 3:
-                score += 0.30
-            elif term_matches >= 1:
-                score += 0.20
+            high_matches = sum(1 for term in high_value_terms if term in readme)
+            medium_matches = sum(1 for term in medium_value_terms if term in readme)
+            
+            score += high_matches * 0.15
+            score += medium_matches * 0.10
             
             # Check for dataset metadata
             datasets = model_info.get("datasets")
             if datasets:
-                score += 0.20
+                score += 0.25
             
             # Check description for dataset info
             description = (model_info.get("description") or "").lower()
-            if description and any(term in description for term in dataset_terms):
-                score += 0.15
+            if description:
+                if any(term in description for term in high_value_terms):
+                    score += 0.15
+                elif any(term in description for term in medium_value_terms):
+                    score += 0.10
             
             # Check tags for dataset information
             tags = model_info.get("tags", [])
@@ -723,34 +725,32 @@ class CodeQualityMetric(Metric):
         start_time = time.time()
         
         try:
-            # Start with generous baseline - most published models have usable code
-            score = 0.45
+            score = 0.30  # Moderate baseline
             readme = (model_info.get("readme") or "").lower()
             
-            # Check for code indicators in README - simpler scoring
-            code_indicators = ["```", "import", "from", "model", "tokenizer", 
-                             "usage", "example", "code", "load_model"]
+            # High-value code indicators
+            high_value = ["```python", "from transformers", "import torch"]
+            medium_value = ["usage", "example", "tokenizer", "model.generate"]
             
-            indicator_matches = sum(1 for indicator in code_indicators if indicator in readme)
-            if indicator_matches >= 4:
-                score += 0.30
-            elif indicator_matches >= 2:
-                score += 0.20
+            high_matches = sum(1 for indicator in high_value if indicator in readme)
+            medium_matches = sum(1 for indicator in medium_value if indicator in readme)
+            
+            score += high_matches * 0.15
+            score += medium_matches * 0.08
             
             # Check for actual model files
             files = model_info.get("siblings", [])
             if files:
                 essential_files = ["config.json", ".safetensors", "pytorch_model", "tokenizer"]
-                has_essential = any(
-                    any(essential in str(f.get("rfilename") or "").lower() 
-                        for essential in essential_files)
-                    for f in files
+                file_count = sum(
+                    1 for f in files
+                    if any(essential in str(f.get("rfilename") or "").lower() 
+                           for essential in essential_files)
                 )
-                if has_essential:
-                    score += 0.20
+                score += min(file_count * 0.10, 0.30)
             
             # Bonus for good documentation
-            if len(readme) > 500:
+            if len(readme) > 800:
                 score += 0.10
             
             self._latency = int((time.time() - start_time) * 1000)
@@ -796,7 +796,6 @@ OUTPUT REQUIREMENTS:
         start_time = time.time()
         
         try:
-            # Start conservative - performance claims should be well-documented
             readme = model_info.get("readme", "")
             readme_lower = readme.lower()
             
@@ -806,12 +805,10 @@ OUTPUT REQUIREMENTS:
             has_metrics = any(term in readme_lower for term in performance_terms)
             
             if not has_metrics:
-                score = 0.0  # No performance info at all
+                score = 0.0
             else:
-                # Have AI check README for performance metrics
+                # Have AI evaluate performance documentation quality
                 score = self._evaluate_performance_in_readme(readme)
-                # Scale down AI score to be more conservative
-                score = score * 0.75
 
             self._latency = int((time.time() - start_time) * 1000)
             return score

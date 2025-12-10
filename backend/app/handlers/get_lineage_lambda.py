@@ -117,7 +117,7 @@ def lambda_handler(event, context):
             print("  Auto-lineage entries found:", auto_lineage)
             for entry in auto_lineage:
                 parent = entry.get("artifact_id")
-                relationship = entry.get("relationship", "derived_from")
+                relationship = entry.get("relationship", "base_model")
                 is_placeholder = entry.get("placeholder", False)
 
                 if not parent:

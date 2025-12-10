@@ -1498,6 +1498,20 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             if base:
                 add_auto_rel(base, peft_type)
 
+        # ---- RULE 6: model-index base model ----
+        model_index_raw = metadata_dict.get("model_index")
+        if model_index_raw:
+            try:
+                model_index = json.loads(model_index_raw)
+                if isinstance(model_index, list):
+                    for entry in model_index:
+                        training = entry.get("training", {})
+                        base_model = training.get("base_model")
+                if base_model:
+                    add_auto_rel(base_model, "base_model")
+            except Exception as e:
+                print("[AUTOGRADER DEBUG LINEAGE] Failed to parse model-index:", e)
+
         # Save auto lineage entries into metadata
         if auto_relationships:
             metadata_dict["auto_lineage"] = auto_relationships

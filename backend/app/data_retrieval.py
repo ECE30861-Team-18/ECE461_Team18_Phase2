@@ -523,7 +523,7 @@ class HuggingFaceAPIClient:
                 model_id=model_data.get('modelId'),
                 mask_token=model_data.get('mask_token'),
                 widget_data=str(model_data.get('widgetData')) if model_data.get('widgetData') else None,
-                model_index=str(model_data.get('model-index')) if model_data.get('model-index') else None,
+                model_index=json.dumps(model_data.get('model-index')) if model_data.get('model-index') else None,
                 config=json.dumps(model_data.get('config')) if model_data.get('config') else None,
                 transformers_info=str(model_data.get('transformersInfo')) if model_data.get('transformersInfo') else None,
                 spaces=model_data.get('spaces'),

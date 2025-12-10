@@ -1408,7 +1408,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Load config.json (stringified JSON)
         raw_config = metadata_dict.get("config")
         try:
-            print("[AUTOGRADER DEBUG LINEAGE] Raw config JSON for artifact", raw_config)
+            print("[AUTOGRADER DEBUG LINEAGE] Raw config JSON for artifact", artifact_name, raw_config)
             
             if isinstance(raw_config, dict):
                 config = raw_config

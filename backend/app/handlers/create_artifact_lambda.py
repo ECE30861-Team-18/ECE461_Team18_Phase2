@@ -112,7 +112,8 @@ def extract_artifact_dependencies(readme: str) -> dict:
     # Step 3: Always use LLM to extract keywords (even if we have frontmatter)
     # Frontmatter gives exact names, LLM adds flexible matching keywords
     if frontmatter_datasets:
-        print(f"[DEPENDENCY] Found datasets in frontmatter: {frontmatter_datasets}")
+        print(
+            f"[DEPENDENCY] Found datasets in frontmatter: {frontmatter_datasets}")
         print(f"[DEPENDENCY] Using LLM for code repos only")
     if github_urls:
         print(f"[DEPENDENCY] Found GitHub URLs: {github_urls}")
@@ -247,9 +248,11 @@ $readme_snippet
 
         # Remove markdown code blocks
         if content.startswith("```"):
-            content = content.split("\n", 1)[1] if "\n" in content else content[3:]
+            content = content.split(
+                "\n", 1)[1] if "\n" in content else content[3:]
         if content.endswith("```"):
-            content = content.rsplit("\n", 1)[0] if "\n" in content else content[:-3]
+            content = content.rsplit(
+                "\n", 1)[0] if "\n" in content else content[:-3]
 
         try:
             extracted = json.loads(content)
@@ -257,7 +260,8 @@ $readme_snippet
             print(
                 "[DEPENDENCY] LLM returned invalid JSON, falling back to empty dependencies"
             )
-            extracted = {"training_datasets": [], "eval_datasets": [], "code_repos": []}
+            extracted = {"training_datasets": [],
+                         "eval_datasets": [], "code_repos": []}
 
         print(f"[DEPENDENCY] LLM extracted: {extracted}")
 
@@ -334,7 +338,8 @@ $readme_snippet
                 repo_keywords = repo.get("keywords", [])
                 if repo_url:
                     url_to_keywords[repo_url.lower()] = repo_keywords
-                    all_code_repos.append({"url": repo_url, "keywords": repo_keywords})
+                    all_code_repos.append(
+                        {"url": repo_url, "keywords": repo_keywords})
             else:
                 # Old format - just URL string
                 if repo:
@@ -467,9 +472,11 @@ $readme_snippet
         content = result["content"][0]["text"].strip()
 
         if content.startswith("```"):
-            content = content.split("\n", 1)[1] if "\n" in content else content[3:]
+            content = content.split(
+                "\n", 1)[1] if "\n" in content else content[3:]
         if content.endswith("```"):
-            content = content.rsplit("\n", 1)[0] if "\n" in content else content[:-3]
+            content = content.rsplit(
+                "\n", 1)[0] if "\n" in content else content[:-3]
 
         try:
             extracted = json.loads(content)
@@ -477,7 +484,8 @@ $readme_snippet
             print(
                 "[DEPENDENCY] LLM returned invalid JSON, falling back to empty dependencies"
             )
-            extracted = {"training_datasets": [], "eval_datasets": [], "code_repos": []}
+            extracted = {"training_datasets": [],
+                         "eval_datasets": [], "code_repos": []}
 
         print(f"[DEPENDENCY] Code repo datasets: {extracted}")
         return extracted
@@ -635,15 +643,19 @@ def compute_identifier_score(
     artifact_tokens = set(norm_artifact.split())
     if expected_tokens and artifact_tokens:
         if expected_tokens.issubset(artifact_tokens):
-            score = max(score, min(1.0, 0.85 + 0.05 * min(len(expected_tokens), 2)))
+            score = max(score, min(1.0, 0.85 + 0.05 *
+                        min(len(expected_tokens), 2)))
         if artifact_tokens.issubset(expected_tokens):
-            score = max(score, min(1.0, 0.85 + 0.05 * min(len(artifact_tokens), 2)))
+            score = max(score, min(1.0, 0.85 + 0.05 *
+                        min(len(artifact_tokens), 2)))
 
     # Small boosts for substring containment
     if norm_expected in norm_artifact and len(norm_expected) >= 3:
-        score = max(score, 0.8 * (len(norm_expected) / max(len(norm_artifact), 1)))
+        score = max(score, 0.8 * (len(norm_expected) /
+                    max(len(norm_artifact), 1)))
     if norm_artifact in norm_expected and len(norm_artifact) >= 3:
-        score = max(score, 0.8 * (len(norm_artifact) / max(len(norm_expected), 1)))
+        score = max(score, 0.8 * (len(norm_artifact) /
+                    max(len(norm_expected), 1)))
 
     return max(0.0, min(1.0, score))
 
@@ -659,7 +671,8 @@ def compute_dataset_link_score(
         except:
             raw = {}
     deps = raw if isinstance(raw, dict) else {}
-    candidates = deps.get("training_datasets", []) + deps.get("eval_datasets", [])
+    candidates = deps.get("training_datasets", []) + \
+        deps.get("eval_datasets", [])
 
     max_score = 0.0
     for entry in candidates:
@@ -674,7 +687,8 @@ def compute_dataset_link_score(
         for candidate in [name] + list(keywords):
             if not candidate:
                 continue
-            score = compute_identifier_score(artifact_name, source_url, candidate)
+            score = compute_identifier_score(
+                artifact_name, source_url, candidate)
             if score > max_score:
                 max_score = score
 
@@ -707,7 +721,8 @@ def compute_code_link_score(
         for candidate in [expected_url] + list(keywords):
             if not candidate:
                 continue
-            score = compute_identifier_score(artifact_name, source_url, candidate)
+            score = compute_identifier_score(
+                artifact_name, source_url, candidate)
             if score > max_code_repo_score:
                 max_code_repo_score = score
 
@@ -773,7 +788,8 @@ def find_and_link_to_models(
     When dataset/code is ingested, find models expecting it and create dependencies.
     For code repos: also cascade dataset links (code->model implies datasets->model).
     """
-    print(f"[DEPENDENCY] Linking {artifact_type} '{artifact_name}' to models...")
+    print(
+        f"[DEPENDENCY] Linking {artifact_type} '{artifact_name}' to models...")
 
     models = run_query(
         "SELECT id, name, metadata FROM artifacts WHERE type = 'model';", fetch=True
@@ -822,11 +838,13 @@ def find_and_link_to_models(
         dependencies = raw_deps if isinstance(raw_deps, dict) else {}
 
         if artifact_type == "dataset":
-            score = compute_dataset_link_score(metadata, artifact_name, source_url)
+            score = compute_dataset_link_score(
+                metadata, artifact_name, source_url)
             # Fallback: if the model does not declare expected datasets and the
             # dataset name is strongly similar to the model name, allow linking.
             if not dependencies:
-                sim = fuzzy_string_similarity(artifact_name, model.get("name", ""))
+                sim = fuzzy_string_similarity(
+                    artifact_name, model.get("name", ""))
                 if sim >= 0.70:
                     score = sim
                 else:
@@ -837,10 +855,12 @@ def find_and_link_to_models(
             matched_score = score
 
             enforce_limit = (
-                dep_type in DEPENDENCY_CAP_TYPES and model.get("id") is not None
+                dep_type in DEPENDENCY_CAP_TYPES and model.get(
+                    "id") is not None
             )
             if enforce_limit:
-                existing_types = dependency_state.setdefault(model["id"], set())
+                existing_types = dependency_state.setdefault(
+                    model["id"], set())
                 if dep_type in existing_types:
                     print(
                         f"[DEPENDENCY] Model {model['id']} already has a {dep_type}; skipping new link"
@@ -888,10 +908,12 @@ def find_and_link_to_models(
             matched_score = score
 
             enforce_limit = (
-                dep_type in DEPENDENCY_CAP_TYPES and model.get("id") is not None
+                dep_type in DEPENDENCY_CAP_TYPES and model.get(
+                    "id") is not None
             )
             if enforce_limit:
-                existing_types = dependency_state.setdefault(model["id"], set())
+                existing_types = dependency_state.setdefault(
+                    model["id"], set())
                 if dep_type in existing_types:
                     print(
                         f"[DEPENDENCY] Model {model['id']} already has a {dep_type}; skipping new link"
@@ -918,12 +940,14 @@ def find_and_link_to_models(
                 VALUES (%s, %s, %s, %s, %s, 'auto_discovered')
                 ON CONFLICT DO NOTHING;
                 """,
-                (model["id"], artifact_id, model.get("name"), artifact_name, dep_type),
+                (model["id"], artifact_id, model.get(
+                    "name"), artifact_name, dep_type),
                 fetch=False,
             )
             links_created += 1
             linked_model_ids.append(model["id"])
-            linked_models_info.append({"id": model["id"], "name": model.get("name")})
+            linked_models_info.append(
+                {"id": model["id"], "name": model.get("name")})
             if dep_type in DEPENDENCY_CAP_TYPES:
                 dependency_state.setdefault(model["id"], set()).add(dep_type)
             print(
@@ -940,7 +964,8 @@ def find_and_link_to_models(
 
     # CASCADE: If code repo linked to models, link datasets from code README to same models
     if artifact_type == "code" and linked_models_info and code_datasets:
-        cascade_dataset_links(linked_models_info, code_datasets, dependency_state)
+        cascade_dataset_links(linked_models_info,
+                              code_datasets, dependency_state)
 
 
 def cascade_dataset_links(models: list, dataset_names: list, dependency_state=None):
@@ -978,7 +1003,8 @@ def cascade_dataset_links(models: list, dataset_names: list, dependency_state=No
 
         # Check if this dataset matches any dataset mentioned in code README
         for mentioned_ds in dataset_names:
-            score = compute_identifier_score(dataset_name, dataset_url, mentioned_ds)
+            score = compute_identifier_score(
+                dataset_name, dataset_url, mentioned_ds)
             if score >= DATASET_LINK_THRESHOLD:
                 # Link this dataset to all models that the code repo is linked to
                 for model_info in models:
@@ -988,7 +1014,8 @@ def cascade_dataset_links(models: list, dataset_names: list, dependency_state=No
                         continue
                     already_has_dataset = False
                     if model_id is not None:
-                        existing_types = dependency_state.setdefault(model_id, set())
+                        existing_types = dependency_state.setdefault(
+                            model_id, set())
                         if dependency_type in existing_types:
                             already_has_dataset = True
                     if already_has_dataset:
@@ -1026,7 +1053,8 @@ def cascade_dataset_links(models: list, dataset_names: list, dependency_state=No
                         print(f"[DEPENDENCY CASCADE] Failed: {e}")
                 break
 
-    print(f"[DEPENDENCY CASCADE] Created {links_created} cascaded dataset links")
+    print(
+        f"[DEPENDENCY CASCADE] Created {links_created} cascaded dataset links")
 
     # Recalculate ratings for affected models
     if links_created > 0 and model_ids:
@@ -1069,7 +1097,8 @@ def recalculate_model_ratings(model_ids: list):
             dataset_metric = DatasetQualityMetric()
             code_metric = CodeQualityMetric()
 
-            ratings["dataset_quality"] = dataset_metric.calculate_metric(metadata)
+            ratings["dataset_quality"] = dataset_metric.calculate_metric(
+                metadata)
             ratings["code_quality"] = code_metric.calculate_metric(metadata)
 
             # Recalculate net_score with updated metrics (all weights are 0.125)
@@ -1187,7 +1216,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         # >>> MINIMAL CHANGE: type-aware URL validation <<<
         if not identifier:
-            response = {"statusCode": 400, "body": json.dumps({"error": "Invalid URL"})}
+            response = {"statusCode": 400,
+                        "body": json.dumps({"error": "Invalid URL"})}
             log_response(response)  # <<< LOGGING
             return response
 
@@ -1259,7 +1289,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             response = {
                 "statusCode": 409,
                 "body": json.dumps(
-                    {"error": "Artifact already exists", "id": check_result[0]["id"]}
+                    {"error": "Artifact already exists",
+                        "id": check_result[0]["id"]}
                 ),
             }
             log_response(response)  # <<< LOGGING
@@ -1347,7 +1378,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     metadata_dict["expected_dependencies"] = dependencies
                     print(f"[DEPENDENCY] Stored: {dependencies}")
 
-        
         metadata_json = json.dumps(metadata_dict)
 
         # --------------------------
@@ -1393,7 +1423,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # --------------------------
         if artifact_type in ("dataset", "code"):
             readme_for_code = (
-                metadata_dict.get("readme", "") if artifact_type == "code" else ""
+                metadata_dict.get(
+                    "readme", "") if artifact_type == "code" else ""
             )
             find_and_link_to_models(
                 artifact_id, artifact_type, artifact_name, url, readme_for_code
@@ -1408,13 +1439,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Load config.json (stringified JSON)
         raw_config = metadata_dict.get("config")
         try:
-            print("[AUTOGRADER DEBUG LINEAGE] Raw config JSON for artifact", artifact_name, raw_config)
-            
+            print("[AUTOGRADER DEBUG LINEAGE] Raw config JSON for artifact",
+                  artifact_name, raw_config)
+
             if isinstance(raw_config, dict):
                 config = raw_config
             elif isinstance(raw_config, str):
                 config = json.loads(raw_config) if raw_config else {}
-            
+
             print("[AUTOGRADER DEBUG LINEAGE] Parsed config JSON for artifact", config)
         except json.JSONDecodeError:
             config = {}
@@ -1425,17 +1457,25 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             if not parent_name or not isinstance(parent_name, str):
                 return
 
-            # Try to find parent artifact in DB by name
-            parent_query = run_query(
-                "SELECT id FROM artifacts WHERE name = %s;", (parent_name,), fetch=True
-            )
-            print(f"[AUTOGRADER DEBUG LINEAGE] add_auto_rel parent query:", parent_query)
-            if parent_query and parent_query[0]:
-                parent_id = parent_query[0]["id"]
-                from_id = parent_id
-                to_id = artifact_id
+            candidates = [parent_name]
 
-                # Insert into artifact_relationships table
+            # If HF-style org/name, also try short name
+            if "/" in parent_name:
+                candidates.append(parent_name.split("/")[-1])
+
+            parent_query = None
+            for candidate in candidates:
+                parent_query = run_query(
+                    "SELECT id FROM artifacts WHERE name = %s;",
+                    (candidate,),
+                    fetch=True,
+                )
+                if parent_query:
+                    break
+
+            if parent_query:
+                parent_id = parent_query[0]["id"]
+
                 run_query(
                     """
                     INSERT INTO artifact_relationships
@@ -1443,11 +1483,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     VALUES (%s, %s, %s, %s)
                     ON CONFLICT DO NOTHING;
                     """,
-                    (from_id, to_id, relationship_type, "config_json"),
+                    (parent_id, artifact_id, relationship_type, "config_json"),
                     fetch=False,
                 )
 
-                # Save into metadata for debugging / lineage lambda
                 auto_relationships.append(
                     {
                         "artifact_id": parent_id,
@@ -1455,9 +1494,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         "direction": "from",
                     }
                 )
-
+                
             else:
-                # Parent isn't an artifact we know — save placeholder
                 auto_relationships.append(
                     {
                         "artifact_id": parent_name,
@@ -1469,20 +1507,23 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         # ---- RULE 1: PEFT / LoRA / Adapter ----
         if "base_model_name_or_path" in config:
-            print("[AUTOGRADER DEBUG LINEAGE] Found base_model_name_or_path:", config["base_model_name_or_path"])
+            print("[AUTOGRADER DEBUG LINEAGE] Found base_model_name_or_path:",
+                  config["base_model_name_or_path"])
             add_auto_rel(config["base_model_name_or_path"], "base_model")
 
         # ---- RULE 2: Fine-tuned / derived checkpoint ----
         # Note: Avoid self-referential loops
         if "_name_or_path" in config:
-            print("[AUTOGRADER DEBUG LINEAGE] Found _name_or_path:", config["_name_or_path"])
+            print("[AUTOGRADER DEBUG LINEAGE] Found _name_or_path:",
+                  config["_name_or_path"])
             val = config["_name_or_path"]
             if isinstance(val, str) and val != artifact_name:
                 add_auto_rel(val, "derived_from")
 
         # ---- RULE 3: finetuned_from ----
         if "finetuned_from" in config:
-            print("[AUTOGRADER DEBUG LINEAGE] Found finetuned_from:", config["finetuned_from"])
+            print("[AUTOGRADER DEBUG LINEAGE] Found finetuned_from:",
+                  config["finetuned_from"])
             add_auto_rel(config["finetuned_from"], "fine_tuned_from")
 
         # ---- RULE 4: Distillation teacher ----
@@ -1492,7 +1533,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         # ---- RULE 5: PEFT type (LoRA, prefix-tuning, etc.) ----
         if "peft_type" in config:
-            print("[AUTOGRADER DEBUG LINEAGE] Found peft_type:", config["peft_type"])
+            print("[AUTOGRADER DEBUG LINEAGE] Found peft_type:",
+                  config["peft_type"])
             base = config.get("base_model_name_or_path")
             peft_type = config["peft_type"].lower()
             if base:
@@ -1509,7 +1551,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         training = entry.get("training", {})
                         base_model = training.get("base_model")
                 if base_model:
-                    print("[AUTOGRADER DEBUG LINEAGE] found model-index base_model:", base_model)
+                    print(
+                        "[AUTOGRADER DEBUG LINEAGE] found model-index base_model:", base_model)
                     add_auto_rel(base_model, "base_model")
             except Exception as e:
                 print("[AUTOGRADER DEBUG LINEAGE] Failed to parse model-index:", e)
@@ -1522,7 +1565,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # 6c. Create lineage relationship if provided
         # --------------------------
         if related_model_id and relationship_type:
-            print("[LINEAGE] Creating user-provided relationship:", related_model_id, relationship_type)
+            print("[LINEAGE] Creating user-provided relationship:",
+                  related_model_id, relationship_type)
             check_model = run_query(
                 "SELECT id, type FROM artifacts WHERE id = %s;",
                 (related_model_id,),
@@ -1552,7 +1596,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         "artifact_id": related_model_id,
                         "relationship": relationship_type,
                         "direction": (
-                            "to" if artifact_type in ("dataset", "code") else "from"
+                            "to" if artifact_type in (
+                                "dataset", "code") else "from"
                         ),
                     }
                 )
@@ -1565,7 +1610,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 WHERE id = %s;
                 """,
                 (json.dumps(metadata_dict), artifact_id), fetch=False
-                )
+            )
 
         # --------------------------
         # 7. Send SQS message to ECS ingest worker

@@ -24,16 +24,17 @@ def lambda_handler(event, context):
             return {
                 "statusCode": 400,
                 "headers": {"Content-Type": "application/json"},
-                "body": json.dumps({"error": "Missing artifact_id"})
+                "body": json.dumps({"error": "The lineage graph cannot be computed because the artifact metadata is missing or malformed."})
             }
 
         try:
             artifact_id = int(artifact_id)
         except ValueError:
+            print("Invalid artifact_id format:", artifact_id)
             return {
                 "statusCode": 400,
                 "headers": {"Content-Type": "application/json"},
-                "body": json.dumps({"error": "Invalid artifact_id"})
+                "body": json.dumps({"error": "The lineage graph cannot be computed because the artifact metadata is missing or malformed."})
             }
 
         # -------------------------------
@@ -46,19 +47,20 @@ def lambda_handler(event, context):
         )
 
         if not root_result:
+            print("Artifact not found for ID:", artifact_id)
             return {
                 "statusCode": 404,
                 "headers": {"Content-Type": "application/json"},
-                "body": json.dumps({"error": "Artifact does not exist"})
+                "body": json.dumps({"error": "Artifact does not exist."})
             }
 
         root = root_result[0]
 
         if root["type"] != "model":
             return {
-                "statusCode": 400,
+                "statusCode": 404,
                 "headers": {"Content-Type": "application/json"},
-                "body": json.dumps({"error": "Lineage is only supported for model artifacts"})
+                "body": json.dumps({"error": "Artifact does not exist."})
             }
 
         # -------------------------------

@@ -107,7 +107,7 @@ def lambda_handler(event, context):
                 nodes[current_id] = {
                     "artifact_id": current_id,
                     "name": curr["name"],
-                    "source": "database"
+                    "source": "config_json"
                 }
 
             # -------------------------------

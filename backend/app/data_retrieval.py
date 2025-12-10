@@ -499,14 +499,6 @@ class HuggingFaceAPIClient:
 
             # Fetch raw config.json if available
             raw_config = self.fetch_raw_config(identifier)
-            
-            if isinstance(raw_config, dict):
-                config_json = json.dumps(raw_config)
-            elif isinstance(raw_config, str):
-                config_json = raw_config
-            else:
-                config_json = None
-            
             model_data["config"] = raw_config
 
 
@@ -540,15 +532,15 @@ class HuggingFaceAPIClient:
                 paperswithcode_id=model_data.get('paperswithcode_id'),
                 downloads=model_data.get('downloads'),
                 likes=model_data.get('likes'),
-                card_data=json.dumps(model_data.get('cardData')) if model_data.get('cardData') else None,
+                card_data=str(model_data.get('cardData')) if model_data.get('cardData') else None,
                 used_storage=model_data.get('usedStorage'),
                 pipeline_tag=model_data.get('pipeline_tag'),
                 library_name=model_data.get('library_name'),
                 model_id=model_data.get('modelId'),
                 mask_token=model_data.get('mask_token'),
                 widget_data=str(model_data.get('widgetData')) if model_data.get('widgetData') else None,
-                model_index=json.dumps(model_data.get('model-index')) if model_data.get('model-index') else None,
-                config=config_json,
+                model_index=str(model_data.get('model-index')) if model_data.get('model-index') else None,
+                config=str(model_data.get('config')) if model_data.get('config') else None,
                 transformers_info=str(model_data.get('transformersInfo')) if model_data.get('transformersInfo') else None,
                 spaces=model_data.get('spaces'),
                 safetensors=model_data.get('safetensors'),

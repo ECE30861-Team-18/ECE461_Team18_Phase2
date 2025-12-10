@@ -3,6 +3,7 @@ import os
 import difflib
 import re
 import boto3
+import ast
 import traceback  # <<< LOGGING
 from string import Template
 from typing import Any, Dict
@@ -1445,12 +1446,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             if isinstance(raw_config, dict):
                 config = raw_config
             elif isinstance(raw_config, str):
-                config = json.loads(raw_config) if raw_config else {}
+                config = ast.literal_eval(raw_config) if raw_config else {}
 
             print("[AUTOGRADER DEBUG LINEAGE] Parsed config JSON for artifact", config)
-        except json.JSONDecodeError:
+        except Exception as e:
             config = {}
-            print("[AUTOGRADER DEBUG LINEAGE] Failed to parse config JSON for artifact")
+            print("[AUTOGRADER DEBUG LINEAGE] Failed to parse config JSON for artifact", e)
 
         # Helper: insert relationship into DB (if parent exists)
         def add_auto_rel(parent_name, relationship_type):

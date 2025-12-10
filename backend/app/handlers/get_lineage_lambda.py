@@ -64,6 +64,7 @@ def lambda_handler(event, context):
         # -------------------------------
         # BFS over model relationships
         # -------------------------------
+        print("Starting lineage traversal from artifact ID:", artifact_id, root["name"])
         nodes = {}
         edges = []
         visited = set()
@@ -88,6 +89,8 @@ def lambda_handler(event, context):
             if curr["type"] != "model":
                 continue
 
+            print("Processing artifact ID:", current_id, curr["name"])
+
             # Parse metadata
             metadata = curr.get("metadata", {})
             if isinstance(metadata, str):
@@ -100,6 +103,7 @@ def lambda_handler(event, context):
             # Add node
             # -------------------------------
             if current_id not in nodes:
+                print("Adding node:", current_id, curr["name"])
                 nodes[current_id] = {
                     "artifact_id": current_id,
                     "name": curr["name"],
@@ -110,6 +114,7 @@ def lambda_handler(event, context):
             # Handle auto_lineage (config-derived)
             # -------------------------------
             auto_lineage = metadata.get("auto_lineage", [])
+            print("  Auto-lineage entries found:", auto_lineage)
             for entry in auto_lineage:
                 parent = entry.get("artifact_id")
                 relationship = entry.get("relationship", "derived_from")
@@ -117,6 +122,8 @@ def lambda_handler(event, context):
 
                 if not parent:
                     continue
+
+                print(f"  Processing auto-lineage parent: {parent} (placeholder={is_placeholder})")
 
                 if is_placeholder:
                     parent_node_id = f"external:{parent}"
@@ -178,6 +185,10 @@ def lambda_handler(event, context):
         # -------------------------------
         # Final response
         # -------------------------------
+        print("Lineage traversal complete. Nodes:", len(nodes), "Edges:", len(edges), json.dumps({
+                "nodes": list(nodes.values()),
+                "edges": edges
+            }))
         return {
             "statusCode": 200,
             "headers": {"Content-Type": "application/json"},

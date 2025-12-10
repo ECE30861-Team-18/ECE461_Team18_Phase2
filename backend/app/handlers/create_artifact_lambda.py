@@ -1463,25 +1463,30 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         # ---- RULE 1: PEFT / LoRA / Adapter ----
         if "base_model_name_or_path" in config:
+            print("[AUTOGRADER DEBUG] Found base_model_name_or_path:", config["base_model_name_or_path"])
             add_auto_rel(config["base_model_name_or_path"], "base_model")
 
         # ---- RULE 2: Fine-tuned / derived checkpoint ----
         # Note: Avoid self-referential loops
         if "_name_or_path" in config:
+            print("[AUTOGRADER DEBUG] Found _name_or_path:", config["_name_or_path"])
             val = config["_name_or_path"]
             if isinstance(val, str) and val != artifact_name:
                 add_auto_rel(val, "derived_from")
 
         # ---- RULE 3: finetuned_from ----
         if "finetuned_from" in config:
+            print("[AUTOGRADER DEBUG] Found finetuned_from:", config["finetuned_from"])
             add_auto_rel(config["finetuned_from"], "fine_tuned_from")
 
         # ---- RULE 4: Distillation teacher ----
         if "teacher" in config:
+            print("[AUTOGRADER DEBUG] Found teacher:", config["teacher"])
             add_auto_rel(config["teacher"], "teacher_model")
 
         # ---- RULE 5: PEFT type (LoRA, prefix-tuning, etc.) ----
         if "peft_type" in config:
+            print("[AUTOGRADER DEBUG] Found peft_type:", config["peft_type"])
             base = config.get("base_model_name_or_path")
             peft_type = config["peft_type"].lower()
             if base:

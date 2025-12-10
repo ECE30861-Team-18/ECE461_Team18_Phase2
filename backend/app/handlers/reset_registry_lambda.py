@@ -1,14 +1,22 @@
 import json
 import os
+import sys
 import boto3
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rds_connection import run_query
+from auth import require_auth
 
 s3 = boto3.client("s3")
 S3_BUCKET = os.environ.get("S3_BUCKET")
 
 def lambda_handler(event, context):
+    # Validate authentication
+    valid, error_response = require_auth(event)
+    if not valid:
+        return error_response
+    
     try:
-        token = event["headers"].get("x-authorization")
         # ---------------------------------------------------------
         # >>> S3 RESET ADD — delete ALL objects in the bucket
         # ---------------------------------------------------------

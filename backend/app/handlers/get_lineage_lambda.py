@@ -1,5 +1,6 @@
 import json
 from rds_connection import run_query
+from auth import require_auth
 
 
 def lambda_handler(event, context):
@@ -8,6 +9,11 @@ def lambda_handler(event, context):
     Lineage includes ONLY models.
     """
     try:
+        # Validate authentication
+        valid, error_response = require_auth(event)
+        if not valid:
+            return error_response
+        
         # -------------------------------
         # Extract & validate artifact ID
         # -------------------------------

@@ -1,6 +1,11 @@
 import json
 import re
+import sys
+import os
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rds_connection import run_query
+from auth import require_auth
 import traceback  # <<< LOGGING
 
 
@@ -57,7 +62,11 @@ def lambda_handler(event, context):
 
     log_event(event, context)  # <<< LOGGING
 
-    token = event["headers"].get("x-authorization")
+    # Validate authentication
+    valid, error_response = require_auth(event)
+    if not valid:
+        return error_response
+    
     print("Incoming event:", json.dumps(event, indent=2))  # (your original log)
 
     # --- Extract parameters ---

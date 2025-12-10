@@ -1,6 +1,11 @@
 import json
 import traceback
+import sys
+import os
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rds_connection import run_query
+from auth import require_auth
 
 
 def log_event(event, context):
@@ -47,6 +52,12 @@ def lambda_handler(event, context):
     Returns the rating/metrics for a model artifact.
     """
     log_event(event, context)
+    
+    # Validate authentication
+    valid, error_response = require_auth(event)
+    if not valid:
+        return error_response
+    
     print(f"[RATE] Incoming event: {json.dumps(event, indent=2)}")
     
     try:

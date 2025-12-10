@@ -3,6 +3,7 @@ import os
 from rds_connection import run_query
 from url_handler import URLHandler
 from data_retrieval import GitHubAPIClient
+from auth import require_auth
 import traceback  # <<< LOGGING
 
 
@@ -57,6 +58,11 @@ def lambda_handler(event, context):
     print(f"[LICENSE_CHECK] Incoming event: {json.dumps(event, indent=2)}")
     
     try:
+        # Validate authentication
+        valid, error_response = require_auth(event)
+        if not valid:
+            return error_response
+        
         # Extract artifact ID from path parameters
         path_params = event.get("pathParameters", {})
         artifact_id = path_params.get("id")

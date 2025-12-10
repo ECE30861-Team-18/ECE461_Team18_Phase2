@@ -1149,8 +1149,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
     log_event(event, context)  # <<< LOGGING
 
+    # Validate authentication
+    valid, error_response = require_auth(event)
+    if not valid:
+        return error_response
+
     try:
-        token = event["headers"].get("x-authorization")
         body = json.loads(event.get("body", "{}"))
         url = body.get("url")
         provided_name = body.get("name")

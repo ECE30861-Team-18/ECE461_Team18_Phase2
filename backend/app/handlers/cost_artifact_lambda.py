@@ -6,6 +6,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from rds_connection import run_query
+from auth import require_auth
 
 
 def round_to_half(value):
@@ -26,6 +27,11 @@ def lambda_handler(event, context):
     - Without dependency: {"artifact_id": {"standalone_cost": float, "total_cost": float}} (equal values)
     - With dependency: {"artifact_id": {"standalone_cost": float, "total_cost": float}, ...}
     """
+    # Validate authentication
+    valid, error_response = require_auth(event)
+    if not valid:
+        return error_response
+    
     try:
         print(f"[COST] Event: {json.dumps(event)}")
         

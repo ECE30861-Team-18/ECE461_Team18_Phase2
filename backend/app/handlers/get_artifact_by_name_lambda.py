@@ -1,5 +1,6 @@
 import json
 from rds_connection import run_query
+from auth import require_auth
 
 
 def _deserialize_json_fields(record, fields=("metadata", "ratings")):
@@ -19,6 +20,11 @@ def lambda_handler(event, context):
     Returns all artifacts (metadata only) matching the given name.
     """
     try:
+        # Validate authentication
+        valid, error_response = require_auth(event)
+        if not valid:
+            return error_response
+        
         # Log the full incoming event for debugging autograder requests
         print(f"[AUTOGRADER DEBUG] Full event: {json.dumps(event)}")
         print(f"[AUTOGRADER DEBUG] Path parameters: {event.get('pathParameters', {})}")

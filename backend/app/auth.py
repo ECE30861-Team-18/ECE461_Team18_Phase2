@@ -1,15 +1,21 @@
 # backend/app/auth.py
+import sys
+import os
+from datetime import datetime
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from rds_connection import run_query
+
 
 def validate_token(headers):
     """
-    Validates the X-Authorization header according to the ECE461 Phase 2 spec.
+    Validates the X-Authorization header by checking against the database.
 
-    This project does NOT require real JWT verification.
-    It only requires:
+    This now performs REAL token validation:
       - Header must exist
       - Token must be non-empty
       - Token should start with "bearer "
-      - Token should look like a JWT (3 parts separated by dots)
+      - Token must exist in auth_tokens table and not be expired
 
     Returns:
         True if token passes validation rules, otherwise False.
@@ -18,7 +24,8 @@ def validate_token(headers):
     if not headers:
         return False
 
-    token = headers.get("X-Authorization")
+    # Try both cases for header name (API Gateway may normalize headers)
+    token = headers.get("X-Authorization") or headers.get("x-authorization")
     if not token:
         return False
 
@@ -36,7 +43,37 @@ def validate_token(headers):
     if len(jwt_part.split(".")) != 3:
         return False
 
-    return True
+    # Validate token against database
+    try:
+        sql = """
+        SELECT username, expires_at
+        FROM auth_tokens
+        WHERE token = %s;
+        """
+        
+        results = run_query(sql, params=(jwt_part,), fetch=True)
+        
+        if not results or len(results) == 0:
+            print(f"[AUTH] Token not found in database")
+            return False
+        
+        token_data = results[0]
+        expires_at = token_data['expires_at']
+        
+        # Check if token is expired
+        if isinstance(expires_at, str):
+            expires_at = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
+        
+        if datetime.utcnow() > expires_at.replace(tzinfo=None):
+            print(f"[AUTH] Token expired at {expires_at}")
+            return False
+        
+        print(f"[AUTH] Token validated for user: {token_data['username']}")
+        return True
+        
+    except Exception as e:
+        print(f"[AUTH] Token validation error: {e}")
+        return False
 
 
 def require_auth(event):

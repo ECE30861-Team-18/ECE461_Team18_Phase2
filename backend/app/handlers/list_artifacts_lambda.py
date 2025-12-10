@@ -1,5 +1,10 @@
 import json
+import sys
+import os
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rds_connection import run_query
+from auth import require_auth
 
 
 def _deserialize_json_fields(record, fields=("metadata", "ratings")):
@@ -13,7 +18,11 @@ def _deserialize_json_fields(record, fields=("metadata", "ratings")):
 
 
 def lambda_handler(event, context):
-    token = event["headers"].get("x-authorization")
+    # Validate authentication
+    valid, error_response = require_auth(event)
+    if not valid:
+        return error_response
+    
     print("Incoming event:", json.dumps(event, indent=2))
 
     try:

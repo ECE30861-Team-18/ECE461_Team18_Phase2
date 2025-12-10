@@ -69,7 +69,52 @@ cur.execute("""
 CREATE INDEX IF NOT EXISTS idx_dependencies_artifact ON artifact_dependencies(artifact_id);
 """)
 
+# Create users table for authentication
+cur.execute("""
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    is_admin BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+""")
+
+# Create auth_tokens table for token validation
+cur.execute("""
+CREATE TABLE IF NOT EXISTS auth_tokens (
+    id SERIAL PRIMARY KEY,
+    token TEXT UNIQUE NOT NULL,
+    username TEXT NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE
+);
+""")
+
+cur.execute("""
+CREATE INDEX IF NOT EXISTS idx_auth_tokens_token ON auth_tokens(token);
+""")
+
+cur.execute("""
+CREATE INDEX IF NOT EXISTS idx_auth_tokens_username ON auth_tokens(username);
+""")
+
+# Insert default user with hashed password
+# Password: correcthorsebatterystaple123(!__+@**(A'"`;DROP TABLE packages;
+# Using bcrypt hash (requires bcrypt library to generate, this is a pre-generated hash)
+import hashlib
+default_password = """correcthorsebatterystaple123(!__+@**(A'"`;DROP TABLE packages;"""
+password_hash = hashlib.sha256(default_password.encode()).hexdigest()
+
+cur.execute("""
+INSERT INTO users (username, password_hash, is_admin)
+VALUES (%s, %s, %s)
+ON CONFLICT (username) DO NOTHING;
+""", ("ece30861defaultadminuser", password_hash, True))
+
 conn.commit()
 cur.close()
 conn.close()
 print("✅ Tables created successfully!")
+print("✅ Default user created: ece30861defaultadminuser")

@@ -1,6 +1,7 @@
 import json
 import re
 from rds_connection import run_query
+from auth import require_auth
 import traceback  # <<< LOGGING
 
 
@@ -96,6 +97,11 @@ def lambda_handler(event, context):
     Search for artifacts using a regular expression over artifact names and READMEs.
     """
     try:
+        # Validate authentication
+        valid, error_response = require_auth(event)
+        if not valid:
+            return error_response
+        
         # Debug logging
         print(f"[AUTOGRADER DEBUG] Full event: {json.dumps(event)}")
         print(f"[AUTOGRADER DEBUG] Body: {event.get('body', 'EMPTY')}")

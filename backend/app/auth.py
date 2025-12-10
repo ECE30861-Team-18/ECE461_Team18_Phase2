@@ -20,27 +20,37 @@ def validate_token(headers):
     Returns:
         True if token passes validation rules, otherwise False.
     """
+    
+    print(f"[AUTH] Validating token, headers: {headers}")
 
     if not headers:
+        print(f"[AUTH] No headers provided")
         return False
 
     # Try both cases for header name (API Gateway may normalize headers)
     token = headers.get("X-Authorization") or headers.get("x-authorization")
     if not token:
+        print(f"[AUTH] No X-Authorization header found")
         return False
 
     token = token.strip()
+    print(f"[AUTH] Token received: {token[:50]}...")
+    
     if len(token) == 0:
+        print(f"[AUTH] Token is empty")
         return False
 
     # Must start with "bearer "
     if not token.lower().startswith("bearer "):
+        print(f"[AUTH] Token doesn't start with 'bearer '")
         return False
 
     jwt_part = token.split(" ", 1)[1]
+    print(f"[AUTH] JWT part: {jwt_part[:50]}...")
 
     # Must look like a JWT: a.b.c
     if len(jwt_part.split(".")) != 3:
+        print(f"[AUTH] JWT doesn't have 3 parts")
         return False
 
     # Validate token against database

@@ -1,12 +1,36 @@
 import psycopg2
 import os
+import boto3
+import json
+
+# Retrieve database credentials from AWS Secrets Manager
+def get_db_credentials():
+    secret_name = "DB_CREDS"
+    region_name = "us-east-1"
+    
+    session = boto3.session.Session()
+    client = session.client(
+        service_name='secretsmanager',
+        region_name=region_name
+    )
+    
+    try:
+        get_secret_value_response = client.get_secret_value(SecretId=secret_name)
+        secret = get_secret_value_response['SecretString']
+        return json.loads(secret)
+    except Exception as e:
+        print(f"Error retrieving secret: {e}")
+        raise
+
+# Get credentials
+creds = get_db_credentials()
 
 conn = psycopg2.connect(
-    host="team18-phase2-database.cuvgicoyg2el.us-east-1.rds.amazonaws.com",
-    port=5432,
-    database="",
-    user="",
-    password=""
+    host=creds.get("DB_HOST"),
+    port=int(creds.get("DB_PORT", 5432)),
+    database=creds.get("DB_NAME"),
+    user=creds.get("DB_USER"),
+    password=creds.get("DB_PASS")
 )
 
 cur = conn.cursor()
@@ -101,8 +125,8 @@ CREATE INDEX IF NOT EXISTS idx_auth_tokens_username ON auth_tokens(username);
 """)
 
 # Insert default user with hashed password
-# Password: correcthorsebatterystaple123(!__+@**(A'"`;DROP TABLE packages;
-# Using bcrypt hash (requires bcrypt library to generate, this is a pre-generated hash)
+# Password: correcthorsebatterystaple123(!__+@**(A'"`;DROP TABLE artifacts;
+# Using SHA256 hash
 import hashlib
 default_password = """correcthorsebatterystaple123(!__+@**(A'"`;DROP TABLE packages;"""
 password_hash = hashlib.sha256(default_password.encode()).hexdigest()

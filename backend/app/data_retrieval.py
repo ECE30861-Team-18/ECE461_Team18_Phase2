@@ -487,6 +487,19 @@ class HuggingFaceAPIClient:
                 logger.exception("HuggingFaceAPIClient: failed to fetch README for %s", identifier)
                 readme = None
 
+            def _fetch_raw_config(self, identifier: str) -> Optional[dict]:
+                raw_url = f"https://huggingface.co/{identifier}/raw/main/config.json"
+                try:
+                    r = self.session.get(raw_url, timeout=10)
+                    if r.status_code == 200:
+                        return r.json()
+                except Exception:
+                    pass
+                return None
+            
+            raw_config = self._fetch_raw_config(identifier)
+            model_data["config"] = raw_config
+
             # Extract license from README frontmatter if available
             extracted_license = self._extract_license_from_readme(readme) if readme else None
             final_license = extracted_license or model_data.get('license')

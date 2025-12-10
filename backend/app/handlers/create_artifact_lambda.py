@@ -1501,6 +1501,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # ---- RULE 6: model-index base model ----
         model_index_raw = metadata_dict.get("model_index")
         if model_index_raw:
+            print("[AUTOGRADER DEBUG LINEAGE] Found model_index:", model_index_raw)
             try:
                 model_index = json.loads(model_index_raw)
                 if isinstance(model_index, list):
@@ -1508,6 +1509,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         training = entry.get("training", {})
                         base_model = training.get("base_model")
                 if base_model:
+                    print("[AUTOGRADER DEBUG LINEAGE] found model-index base_model:", base_model)
                     add_auto_rel(base_model, "base_model")
             except Exception as e:
                 print("[AUTOGRADER DEBUG LINEAGE] Failed to parse model-index:", e)

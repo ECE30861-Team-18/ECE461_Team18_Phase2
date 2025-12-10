@@ -211,8 +211,9 @@ class TestAuthLambdaDatabase:
         
         # Assert
         assert response["statusCode"] == 200
-        body = json.loads(response["body"])
-        assert "bearer mock.jwt.token" == body
+        # Response body is now plain text, not JSON
+        assert response["body"] == "bearer mock.jwt.token"
+        assert response["headers"]["Content-Type"] == "text/plain"
 
     @patch('auth_lambda.run_query')
     def test_authentication_user_not_found(self, mock_run_query):

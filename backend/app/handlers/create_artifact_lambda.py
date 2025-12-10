@@ -1409,7 +1409,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         raw_config = metadata_dict.get("config")
         try:
             print("[AUTOGRADER DEBUG LINEAGE] Raw config JSON for artifact", raw_config)
-            config = json.loads(raw_config) if raw_config else {}
+            
+            if isinstance(raw_config, dict):
+                config = raw_config
+            elif isinstance(raw_config, str):
+                config = json.loads(raw_config) if raw_config else {}
+            
             print("[AUTOGRADER DEBUG LINEAGE] Parsed config JSON for artifact", config)
         except json.JSONDecodeError:
             config = {}

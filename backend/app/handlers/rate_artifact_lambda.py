@@ -1,5 +1,44 @@
 import json
+import traceback
 from rds_connection import run_query
+
+
+def log_event(event, context):
+    print("==== INCOMING EVENT ====")
+    try:
+        print(json.dumps(event, indent=2))
+    except Exception:
+        print(event)
+
+    print("==== CONTEXT ====")
+    try:
+        print(
+            json.dumps(
+                {
+                    "aws_request_id": context.aws_request_id,
+                    "function_name": context.function_name,
+                    "memory_limit_in_mb": context.memory_limit_in_mb,
+                    "function_version": context.function_version,
+                },
+                indent=2,
+            )
+        )
+    except Exception:
+        pass
+
+
+def log_response(response):
+    print("==== OUTGOING RESPONSE ====")
+    try:
+        print(json.dumps(response, indent=2))
+    except Exception:
+        print(response)
+
+
+def log_exception(e):
+    print("==== EXCEPTION OCCURRED ====")
+    print(str(e))
+    traceback.print_exc()
 
 
 def lambda_handler(event, context):
@@ -7,6 +46,7 @@ def lambda_handler(event, context):
     GET /artifact/model/{id}/rate
     Returns the rating/metrics for a model artifact.
     """
+    log_event(event, context)
     print(f"[RATE] Incoming event: {json.dumps(event, indent=2)}")
     
     try:
@@ -15,22 +55,26 @@ def lambda_handler(event, context):
         artifact_id = path_params.get("id")
         
         if not artifact_id:
-            return {
+            response = {
                 "statusCode": 400,
                 "headers": {"Content-Type": "application/json"},
                 "body": json.dumps({"error": "Missing artifact ID"})
             }
+            log_response(response)
+            return response
         
         # Convert to integer for database query
         # If it fails, the ID is valid per spec regex but doesn't exist in our DB → 404
         try:
             artifact_id = int(artifact_id)
         except (ValueError, TypeError):
-            return {
+            response = {
                 "statusCode": 404,
                 "headers": {"Content-Type": "application/json"},
                 "body": json.dumps({"error": "Artifact does not exist"})
             }
+            log_response(response)
+            return response
         
         print(f"[RATE] Fetching ratings for artifact ID: {artifact_id}")
         
@@ -45,11 +89,13 @@ def lambda_handler(event, context):
         
         if not results or len(results) == 0:
             print(f"[RATE] Artifact {artifact_id} not found or not a model")
-            return {
+            response = {
                 "statusCode": 404,
                 "headers": {"Content-Type": "application/json"},
                 "body": json.dumps({"error": "Artifact does not exist"})
             }
+            log_response(response)
+            return response
         
         artifact = results[0]
         ratings_json = artifact.get("ratings")
@@ -114,7 +160,7 @@ def lambda_handler(event, context):
         
         print(f"[RATE] Returning model rating with net_score: {model_rating['net_score']}")
         
-        return {
+        response = {
             "statusCode": 200,
             "headers": {
                 "Content-Type": "application/json",
@@ -124,13 +170,16 @@ def lambda_handler(event, context):
             },
             "body": json.dumps(model_rating, default=str)
         }
+        log_response(response)
+        return response
         
     except Exception as e:
         print(f"[RATE] Error: {e}")
-        import traceback
-        traceback.print_exc()
-        return {
+        log_exception(e)
+        response = {
             "statusCode": 500,
             "headers": {"Content-Type": "application/json"},
             "body": json.dumps({"error": "Internal server error", "details": str(e)})
         }
+        log_response(response)
+        return response

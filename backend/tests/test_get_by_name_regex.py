@@ -27,10 +27,14 @@ class TestGetArtifactByName:
         if 'handlers.get_artifact_by_name_lambda' in sys.modules:
             del sys.modules['handlers.get_artifact_by_name_lambda']
 
+    @patch('handlers.get_artifact_by_name_lambda.require_auth')
     @patch('rds_connection.run_query')
-    def test_get_by_name_success(self, mock_run_query):
+    def test_get_by_name_success(self, mock_run_query, mock_require_auth):
         """Test successful retrieval of artifacts by name"""
         from handlers.get_artifact_by_name_lambda import lambda_handler
+        
+        # Mock authentication to pass
+        mock_require_auth.return_value = (True, None)
         
         # Mock database response
         mock_run_query.return_value = [
@@ -74,10 +78,14 @@ class TestGetArtifactByName:
         assert body[0]['type'] == 'model'
         assert body[1]['id'] == 2
     
+    @patch('handlers.get_artifact_by_name_lambda.require_auth')
     @patch('rds_connection.run_query')
-    def test_get_by_name_not_found(self, mock_run_query):
+    def test_get_by_name_not_found(self, mock_run_query, mock_require_auth):
         """Test retrieval when no artifacts match the name"""
         from handlers.get_artifact_by_name_lambda import lambda_handler
+        
+        # Mock authentication to pass
+        mock_require_auth.return_value = (True, None)
         
         mock_run_query.return_value = []
         
@@ -93,9 +101,13 @@ class TestGetArtifactByName:
         assert 'error' in body
         assert body['error'] == 'No such artifact'
     
-    def test_get_by_name_missing_parameter(self):
+    @patch('handlers.get_artifact_by_name_lambda.require_auth')
+    def test_get_by_name_missing_parameter(self, mock_require_auth):
         """Test when name parameter is missing"""
         from handlers.get_artifact_by_name_lambda import lambda_handler
+        
+        # Mock authentication to pass
+        mock_require_auth.return_value = (True, None)
         
         event = {
             "pathParameters": {},
@@ -108,10 +120,14 @@ class TestGetArtifactByName:
         body = json.loads(response['body'])
         assert 'error' in body
     
+    @patch('handlers.get_artifact_by_name_lambda.require_auth')
     @patch('rds_connection.run_query')
-    def test_get_by_name_database_error(self, mock_run_query):
+    def test_get_by_name_database_error(self, mock_run_query, mock_require_auth):
         """Test handling of database errors"""
         from handlers.get_artifact_by_name_lambda import lambda_handler
+        
+        # Mock authentication to pass
+        mock_require_auth.return_value = (True, None)
         
         mock_run_query.side_effect = Exception("Database connection failed")
         
@@ -137,10 +153,14 @@ class TestGetArtifactByRegex:
         if 'handlers.get_artifact_by_regex_lambda' in sys.modules:
             del sys.modules['handlers.get_artifact_by_regex_lambda']
 
+    @patch('handlers.get_artifact_by_regex_lambda.require_auth')
     @patch('rds_connection.run_query')
-    def test_get_by_regex_name_match(self, mock_run_query):
+    def test_get_by_regex_name_match(self, mock_run_query, mock_require_auth):
         """Test successful regex match on artifact names"""
         from handlers.get_artifact_by_regex_lambda import lambda_handler
+        
+        # Mock authentication to pass
+        mock_require_auth.return_value = (True, None)
         
         mock_run_query.return_value = [
             {
@@ -181,10 +201,14 @@ class TestGetArtifactByRegex:
         assert len(body) == 1
         assert body[0]['name'] == 'bert-base-uncased'
     
+    @patch('handlers.get_artifact_by_regex_lambda.require_auth')
     @patch('rds_connection.run_query')
-    def test_get_by_regex_readme_match(self, mock_run_query):
+    def test_get_by_regex_readme_match(self, mock_run_query, mock_require_auth):
         """Test regex match on README content"""
         from handlers.get_artifact_by_regex_lambda import lambda_handler
+        
+        # Mock authentication to pass
+        mock_require_auth.return_value = (True, None)
         
         mock_run_query.return_value = [
             {
@@ -213,10 +237,14 @@ class TestGetArtifactByRegex:
         assert len(body) == 1
         assert body[0]['name'] == 'model-a'
     
+    @patch('handlers.get_artifact_by_regex_lambda.require_auth')
     @patch('rds_connection.run_query')
-    def test_get_by_regex_no_match(self, mock_run_query):
+    def test_get_by_regex_no_match(self, mock_run_query, mock_require_auth):
         """Test when regex doesn't match any artifacts"""
         from handlers.get_artifact_by_regex_lambda import lambda_handler
+        
+        # Mock authentication to pass
+        mock_require_auth.return_value = (True, None)
         
         mock_run_query.return_value = [
             {
@@ -244,9 +272,13 @@ class TestGetArtifactByRegex:
         body = json.loads(response['body'])
         assert 'error' in body
     
-    def test_get_by_regex_invalid_regex(self):
+    @patch('handlers.get_artifact_by_regex_lambda.require_auth')
+    def test_get_by_regex_invalid_regex(self, mock_require_auth):
         """Test handling of invalid regex patterns"""
         from handlers.get_artifact_by_regex_lambda import lambda_handler
+        
+        # Mock authentication to pass
+        mock_require_auth.return_value = (True, None)
         
         event = {
             "body": json.dumps({"regex": "[invalid(regex"}),
@@ -260,9 +292,13 @@ class TestGetArtifactByRegex:
         assert 'error' in body
         assert 'regex' in body['error'].lower()
     
-    def test_get_by_regex_missing_parameter(self):
+    @patch('handlers.get_artifact_by_regex_lambda.require_auth')
+    def test_get_by_regex_missing_parameter(self, mock_require_auth):
         """Test when regex parameter is missing"""
         from handlers.get_artifact_by_regex_lambda import lambda_handler
+        
+        # Mock authentication to pass
+        mock_require_auth.return_value = (True, None)
         
         event = {
             "body": json.dumps({}),
@@ -275,9 +311,13 @@ class TestGetArtifactByRegex:
         body = json.loads(response['body'])
         assert 'error' in body
     
-    def test_get_by_regex_invalid_json(self):
+    @patch('handlers.get_artifact_by_regex_lambda.require_auth')
+    def test_get_by_regex_invalid_json(self, mock_require_auth):
         """Test handling of invalid JSON in request body"""
         from handlers.get_artifact_by_regex_lambda import lambda_handler
+        
+        # Mock authentication to pass
+        mock_require_auth.return_value = (True, None)
         
         event = {
             "body": "not valid json",
@@ -290,10 +330,14 @@ class TestGetArtifactByRegex:
         body = json.loads(response['body'])
         assert 'error' in body
     
+    @patch('handlers.get_artifact_by_regex_lambda.require_auth')
     @patch('rds_connection.run_query')
-    def test_get_by_regex_case_insensitive(self, mock_run_query):
+    def test_get_by_regex_case_insensitive(self, mock_run_query, mock_require_auth):
         """Test that regex matching is case-insensitive"""
         from handlers.get_artifact_by_regex_lambda import lambda_handler
+        
+        # Mock authentication to pass
+        mock_require_auth.return_value = (True, None)
         
         mock_run_query.return_value = [
             {

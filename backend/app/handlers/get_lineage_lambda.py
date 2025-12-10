@@ -125,27 +125,47 @@ def lambda_handler(event, context):
 
                 print(f"  Processing auto-lineage parent: {parent} (placeholder={is_placeholder})")
 
-                if is_placeholder:
+                if is_placeholder:                 
                     parent_node_id = f"external:{parent}"
-                    if parent_node_id not in nodes:
-                        nodes[parent_node_id] = {
-                            "artifact_id": parent_node_id,
-                            "name": parent,
-                            "source": "config_json"
-                        }
-                    from_id = parent_node_id
+                    
+                    rows = run_query(
+                        "SELECT id, name FROM artifacts WHERE name = %s;",
+                        (parent,),
+                        fetch=True
+                        )
+                    if rows:
+                        real_id = rows[0]["id"]
+                        # Replace external node with real node
+                        parent_node_id = str(real_id)
+                        entry["artifact_id"] = parent_node_id
+                        print(f"   Resolved placeholder to real artifact ID: {parent_node_id}")
+                        if parent_node_id not in nodes:
+                            nodes[parent_node_id] = {
+                                "artifact_id": parent_node_id,
+                                "name": parent,
+                                "source": "config_json"
+                            }
+                        from_id = parent_node_id
+                    else:
+                        parent_node_id = f"external:{parent}"
+                        from_id = None
                 else:
                     from_id = str(parent)
                     if from_id not in visited:
                         queue.append(from_id)
 
-                edge = {
-                    "from_node_artifact_id": from_id,
-                    "to_node_artifact_id": current_id,
-                    "relationship": relationship
-                }
-                if edge not in edges:
-                    edges.append(edge)
+                # Add parent node if not exists
+                if from_id and current_id:
+                    edge = {
+                        "from_node_artifact_id": from_id,
+                        "to_node_artifact_id": current_id,
+                        "relationship": relationship
+                    }
+                    if edge not in edges:
+                        edges.append(edge)
+                else:
+                    print(f"   Could not resolve parent artifact ID: {parent}")
+                
 
             # -------------------------------
             # Handle DB relationships

@@ -23,7 +23,7 @@ A serverless ML model registry that evaluates, stores, and manages machine learn
 - **`url_handler.py`** - GitHub/HuggingFace URL parsing
 - **`data_retrieval.py`** - External API clients for model metadata
 - **`metric_calculator.py`** - Quality metric orchestration
-- **`submetrics.py`** - 10 individual metric implementations
+- **`submetrics.py`** - 11 individual metric implementations
 - **`rds_connection.py`** - PostgreSQL database interface
 
 ## API Endpoints (16 Handlers)
@@ -67,7 +67,7 @@ GET    /tracks                         - Planned features
 DELETE /reset                          - Clear registry (admin only)
 ```
 
-## Quality Metrics (10 Total)
+## Quality Metrics (11 Total)
 
 The system calculates these metrics for every model:
 
@@ -81,8 +81,9 @@ The system calculates these metrics for every model:
 8. **Performance Claims** - AI-powered benchmark validation (AWS Bedrock)
 9. **Reproducibility** - Automated code execution testing
 10. **Reviewedness** - PR code review coverage percentage
+11. **TreeScore** - Average quality score of all parent models in lineage graph
 
-**Net Score**: Weighted average of all metrics (0.0-1.0 scale)
+**Net Score**: Weighted average of metrics 1-10 (TreeScore is informational only, not included in net_score)
 
 ## Database Schema
 
@@ -141,7 +142,7 @@ backend/
 │   ├── url_handler.py         # URL parsing
 │   ├── data_retrieval.py      # GitHub/HF API clients
 │   ├── metric_calculator.py   # Metric orchestration
-│   ├── submetrics.py          # 10 metric classes
+│   ├── submetrics.py          # 11 metric classes
 │   ├── metric.py              # Base metric interface
 │   ├── rds_connection.py      # Database utilities
 │   ├── cli_controller.py      # Legacy CLI (Phase 1)
@@ -186,7 +187,7 @@ User submits HF URL → create_artifact_lambda receives request
 ### 2. Quality Scoring Pipeline
 ```
 rate_artifact_lambda → metric_calculator.py orchestrates
-→ Spawns 10 metric instances from submetrics.py
+→ Spawns 11 metric instances from submetrics.py
 → Each metric fetches data from GitHub/HF APIs
 → Calculates score (0.0-1.0) + latency
 → Aggregates into net_score (weighted average)
@@ -285,6 +286,7 @@ Each metric is a class inheriting from `Metric`:
 - `PerformanceMetric` - AWS Bedrock AI analysis of benchmarks
 - `ReproducibilityMetric` - Extracts/executes Python snippets from README
 - `ReviewednessMetric` - GitHub PR review coverage via API
+- `TreeScoreMetric` - Average net_score of all parent models from lineage graph
 
 ### URL Parsing (`url_handler.py`)
 ```python

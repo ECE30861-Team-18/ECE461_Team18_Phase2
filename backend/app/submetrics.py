@@ -1145,7 +1145,7 @@ class TreeScoreMetric(Metric):
         Returns:
             List of parent net_scores
         """
-        parent_scores = []
+        parent_scores: List[float] = []
         
         try:
             # Get auto_lineage from metadata (config-derived parents)

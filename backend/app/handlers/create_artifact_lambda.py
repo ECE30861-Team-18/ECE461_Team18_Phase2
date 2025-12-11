@@ -1418,6 +1418,23 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             (download_url, artifact_id),
             fetch=False,
         )
+        
+        # Recalculate metrics with artifact_id for TreeScore calculation
+        if artifact_type == "model":
+            model_dict["artifact_id"] = artifact_id
+            calc_with_id = MetricCalculator()
+            rating_with_treescore = calc_with_id.calculate_all_metrics(model_dict, category="MODEL")
+            
+            # Update ratings with TreeScore included
+            run_query(
+                """
+                UPDATE artifacts
+                SET ratings = %s, net_score = %s
+                WHERE id = %s;
+                """,
+                (json.dumps(rating_with_treescore), rating_with_treescore["net_score"], artifact_id),
+                fetch=False,
+            )
 
         # --------------------------
         # 6a. Link dataset/code to models (uses artifact_dependencies table)

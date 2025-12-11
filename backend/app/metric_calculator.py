@@ -25,6 +25,7 @@ class MetricCalculator:
             PerformanceMetric(),
             ReviewedenessMetric(),
             ReproducibilityMetric(),
+            TreeScoreMetric(),
         ]
         
         # Configure weights based on Sarah's priorities from spec
@@ -43,11 +44,12 @@ class MetricCalculator:
             "dataset_quality": 0.05,   # Medium priority - data quality
             "size_score": 0.05,        # Lower priority - deployment consideration
             "reviewedeness": 0.05,     # Lower priority "FOR NOW"
-            "reproducibility": 0.05    # Lower priority "FOR NOW"
+            "reproducibility": 0.05,   # Lower priority "FOR NOW"
+            "tree_score": 0.0          # Not included in net_score - informational only
         }
         
         for metric in self.metrics:
-            metric.weight = weight_config[metric.name]
+            metric.weight = weight_config.get(metric.name, 0.0)
             # metric.weight = 0.125
     
     def calculate_all_metrics(self, model_data: Dict[str, Any], category: str = "MODEL") -> Dict[str, Any]:

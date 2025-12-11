@@ -1071,6 +1071,164 @@ class ReviewedenessMetric(Metric):
 
 
 
+class TreeScoreMetric(Metric):
+    """
+    Calculates the average net score of all parent models in the lineage graph.
+    
+    TreeScore represents the quality of a model's ancestry/foundation.
+    """
+    
+    def __init__(self) -> None:
+        super().__init__()
+        self.name = "tree_score"
+        self.weight = 0.0  # Not included in net_score calculation per spec
+        self._latency = 0
+    
+    def calculate_metric(self, model_info: Dict[str, Any]) -> float:
+        """
+        Calculate TreeScore by averaging parent models' net_scores.
+        
+        Args:
+            model_info: Model data including artifact_id for lineage lookup
+            
+        Returns:
+            Average net_score of all parent models (0.0-1.0), or 0.0 if no parents
+        """
+        start_time = time.time()
+        
+        try:
+            # Import here to avoid circular dependency
+            from rds_connection import run_query
+            
+            # Get the artifact ID from model_info
+            artifact_id = model_info.get("artifact_id")
+            if not artifact_id:
+                # Try to get from metadata
+                metadata = model_info.get("metadata", {})
+                if isinstance(metadata, str):
+                    try:
+                        metadata = json.loads(metadata)
+                    except Exception:
+                        metadata = {}
+                artifact_id = metadata.get("artifact_id")
+            
+            if not artifact_id:
+                self._latency = int((time.time() - start_time) * 1000)
+                return 0.0
+            
+            # Get lineage graph for this model
+            parent_scores = self._get_parent_scores(artifact_id, run_query)
+            
+            if not parent_scores:
+                self._latency = int((time.time() - start_time) * 1000)
+                return 0.0
+            
+            # Calculate average of parent net scores
+            tree_score = sum(parent_scores) / len(parent_scores)
+            
+            self._latency = int((time.time() - start_time) * 1000)
+            return clamp(tree_score, 0.0, 1.0)
+            
+        except Exception as e:
+            print(f"[TreeScore] Error calculating tree score: {e}")
+            self._latency = int((time.time() - start_time) * 1000)
+            return 0.0
+    
+    def _get_parent_scores(self, artifact_id: int, run_query) -> List[float]:
+        """
+        Retrieve net_scores of all parent models from the lineage graph.
+        
+        Args:
+            artifact_id: The model's artifact ID
+            run_query: Database query function
+            
+        Returns:
+            List of parent net_scores
+        """
+        parent_scores = []
+        
+        try:
+            # Get auto_lineage from metadata (config-derived parents)
+            artifact_result = run_query(
+                "SELECT metadata, ratings FROM artifacts WHERE id = %s;",
+                (artifact_id,),
+                fetch=True
+            )
+            
+            if not artifact_result:
+                return parent_scores
+            
+            artifact_data = artifact_result[0]
+            metadata = artifact_data.get("metadata", {})
+            
+            # Parse metadata if string
+            if isinstance(metadata, str):
+                try:
+                    metadata = json.loads(metadata)
+                except Exception:
+                    metadata = {}
+            
+            # Process auto_lineage entries
+            auto_lineage = metadata.get("auto_lineage", [])
+            for entry in auto_lineage:
+                parent_id = entry.get("artifact_id")
+                is_placeholder = entry.get("placeholder", False)
+                
+                if not parent_id:
+                    continue
+                
+                # If placeholder, try to resolve by name
+                if is_placeholder:
+                    parent_name = parent_id
+                    resolved = run_query(
+                        "SELECT id, net_score FROM artifacts WHERE name = %s AND type = 'model';",
+                        (parent_name,),
+                        fetch=True
+                    )
+                    if resolved:
+                        parent_id = resolved[0]["id"]
+                        net_score = resolved[0].get("net_score")
+                        if net_score is not None:
+                            parent_scores.append(float(net_score))
+                else:
+                    # Get parent's net_score
+                    parent_result = run_query(
+                        "SELECT net_score FROM artifacts WHERE id = %s AND type = 'model';",
+                        (parent_id,),
+                        fetch=True
+                    )
+                    if parent_result:
+                        net_score = parent_result[0].get("net_score")
+                        if net_score is not None:
+                            parent_scores.append(float(net_score))
+            
+            # Also check artifact_relationships table
+            rel_result = run_query(
+                """
+                SELECT a.net_score 
+                FROM artifact_relationships ar
+                JOIN artifacts a ON ar.from_artifact_id = a.id
+                WHERE ar.to_artifact_id = %s AND a.type = 'model';
+                """,
+                (artifact_id,),
+                fetch=True
+            )
+            
+            for row in rel_result:
+                net_score = row.get("net_score")
+                if net_score is not None:
+                    parent_scores.append(float(net_score))
+            
+        except Exception as e:
+            print(f"[TreeScore] Error retrieving parent scores: {e}")
+        
+        return parent_scores
+    
+    def calculate_latency(self) -> int:
+        return getattr(self, "_latency", 0)
+
+
+
 def clamp(value: float, min_value: float = 0.0, max_value: float = 1.0) -> float:
     """
     Clip a float between min and max limits

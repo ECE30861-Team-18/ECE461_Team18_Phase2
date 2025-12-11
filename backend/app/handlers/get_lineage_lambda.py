@@ -22,9 +22,9 @@ def lambda_handler(event, context):
 
         if not artifact_id:
             return {
-                "statusCode": 400,
+                "statusCode": 404,
                 "headers": {"Content-Type": "application/json"},
-                "body": json.dumps({"error": "The lineage graph cannot be computed because the artifact metadata is missing or malformed."})
+                "body": json.dumps({"error": "Artifact does not exist."})
             }
 
         try:
@@ -32,9 +32,9 @@ def lambda_handler(event, context):
         except ValueError:
             print("Invalid artifact_id format:", artifact_id)
             return {
-                "statusCode": 400,
+                "statusCode": 404,
                 "headers": {"Content-Type": "application/json"},
-                "body": json.dumps({"error": "The lineage graph cannot be computed because the artifact metadata is missing or malformed."})
+                "body": json.dumps({"error": "Artifact does not exist."})
             }
 
         # -------------------------------

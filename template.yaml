@@ -764,7 +764,7 @@ Resources:
                             name: ece30861defaultadminuser
                             is_admin: true
                           secret:
-                            password: correcthorsebatterystaple123(!__+@**(A'"`;DROP TABLE artifacts;
+                            password: correcthorsebatterystaple123(!__+@**(A'"`;DROP TABLE packages;
                 required: true
               responses:
                 "200":

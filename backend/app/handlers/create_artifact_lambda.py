@@ -789,9 +789,7 @@ def find_and_link_to_models(
             if part and part.strip()
         ]
 
-    artifact_repo_url = _normalize_repo_url(
-        artifact_metadata.get("repository_url") or source_url
-    )
+    artifact_repo_url = _normalize_repo_url(source_url)
 
     for model in models:
         model_id = model.get("id")

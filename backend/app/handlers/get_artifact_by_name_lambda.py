@@ -1,7 +1,7 @@
 import json
 from rds_connection import run_query
 from auth import require_auth
-
+from backend.app.cors import CORS_HEADERS
 
 def _deserialize_json_fields(record, fields=("metadata", "ratings")):
     """Helper to deserialize JSONB fields from the database."""
@@ -43,7 +43,7 @@ def lambda_handler(event, context):
         if not name:
             response = {
                 "statusCode": 400,
-                "headers": {"Content-Type": "application/json"},
+                "headers": {"Content-Type": "application/json", **CORS_HEADERS},
                 "body": json.dumps({"error": "Missing artifact name in path"})
             }
             print(f"[AUTOGRADER DEBUG] Returning 400 response: {json.dumps(response)}")
@@ -63,7 +63,7 @@ def lambda_handler(event, context):
         if not artifacts:
             response = {
                 "statusCode": 404,
-                "headers": {"Content-Type": "application/json"},
+                "headers": {"Content-Type": "application/json", **CORS_HEADERS},
                 "body": json.dumps({"error": "No such artifact"})
             }
             print(f"[AUTOGRADER DEBUG] Returning 404 response: {json.dumps(response)}")
@@ -86,10 +86,7 @@ def lambda_handler(event, context):
         response = {
             "statusCode": 200,
             "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "OPTIONS,GET",
-                "Access-Control-Allow-Headers": "Content-Type,X-Authorization"
+                "Content-Type": "application/json", **CORS_HEADERS
             },
             "body": json.dumps(metadata_list, default=str)
         }

@@ -7,7 +7,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rds_connection import run_query
 from auth import require_auth
 import traceback  # <<< LOGGING
-
+from backend.app.cors import CORS_HEADERS  # <<< CORS HEADERS
 
 def _deserialize_json_fields(record, fields=("metadata", "ratings")):
     for field in fields:
@@ -78,7 +78,7 @@ def lambda_handler(event, context):
     if not artifact_type or not artifact_id:
         response = {
             "statusCode": 400,
-            "headers": {"Content-Type": "application/json"},
+            "headers": {"Content-Type": "application/json", **CORS_HEADERS},
             "body": json.dumps({"error": "Missing artifact_type or id in path"})
         }
         log_response(response)  # <<< LOGGING
@@ -89,7 +89,7 @@ def lambda_handler(event, context):
     if artifact_type not in valid_types:
         response = {
             "statusCode": 400,
-            "headers": {"Content-Type": "application/json"},
+            "headers": {"Content-Type": "application/json", **CORS_HEADERS},
             "body": json.dumps({"error": f"Invalid artifact_type. Must be one of: {', '.join(valid_types)}"})
         }
         log_response(response)  # <<< LOGGING
@@ -104,7 +104,7 @@ def lambda_handler(event, context):
             # Valid ID format per spec, but not in our integer-based DB
             response = {
                 "statusCode": 404,
-                "headers": {"Content-Type": "application/json"},
+                "headers": {"Content-Type": "application/json", **CORS_HEADERS},
                 "body": json.dumps({"message": "Artifact not found"})
             }
             log_response(response)  # <<< LOGGING
@@ -120,7 +120,7 @@ def lambda_handler(event, context):
         if not results:
             response = {
                 "statusCode": 404,
-                "headers": {"Content-Type": "application/json"},
+                "headers": {"Content-Type": "application/json", **CORS_HEADERS},
                 "body": json.dumps({"message": "Artifact not found"})
             }
             log_response(response)  # <<< LOGGING
@@ -144,7 +144,7 @@ def lambda_handler(event, context):
 
         response = {
             "statusCode": 200,
-            "headers": {"Content-Type": "application/json"},
+            "headers": {"Content-Type": "application/json", **CORS_HEADERS},
             "body": json.dumps(response_body, default=str)
         }
 
@@ -157,7 +157,7 @@ def lambda_handler(event, context):
 
         response = {
             "statusCode": 500,
-            "headers": {"Content-Type": "application/json"},
+            "headers": {"Content-Type": "application/json", **CORS_HEADERS},
             "body": json.dumps({"error": str(e)})
         }
         log_response(response)  # <<< LOGGING

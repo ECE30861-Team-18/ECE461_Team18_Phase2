@@ -1,4 +1,4 @@
-from cors import CORS_HEADERS
+from backend.app.cors import CORS_HEADERS
 
 
 def lambda_handler(event, context):

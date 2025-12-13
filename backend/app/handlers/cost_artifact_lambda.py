@@ -1,6 +1,7 @@
 import json
 import sys
 import os
+from backend.app.cors import CORS_HEADERS
 
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -241,6 +242,6 @@ def lambda_handler(event, context):
         traceback.print_exc()
         return {
             'statusCode': 500,
-            'headers': {'Content-Type': 'application/json'},
+            'headers': {'Content-Type': 'application/json', **CORS_HEADERS},
             'body': json.dumps({'error': str(e)})
         }

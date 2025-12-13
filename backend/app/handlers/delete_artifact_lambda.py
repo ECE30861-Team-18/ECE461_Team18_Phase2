@@ -6,6 +6,7 @@ import boto3
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rds_connection import run_query
 from auth import require_auth
+from backend.app.cors import CORS_HEADERS
 
 s3 = boto3.client("s3")
 S3_BUCKET = os.environ.get("S3_BUCKET")
@@ -36,7 +37,7 @@ def lambda_handler(event, context):
     if not artifact_type or not artifact_id: 
         return {
             "statusCode": 400,
-            "headers": {"Content-Type": "application/json"},
+            "headers": {"Content-Type": "application/json", **CORS_HEADERS},
             "body": json.dumps({"error": "Missing artifact_type or id in path"})
         }
 
@@ -49,7 +50,7 @@ def lambda_handler(event, context):
         except ValueError:
             return {
                 "statusCode": 404,
-                "headers": {"Content-Type": "application/json"},
+                "headers": {"Content-Type": "application/json", **CORS_HEADERS},
                 "body": json.dumps({"message": "Artifact not found"})
             }
         
@@ -59,7 +60,7 @@ def lambda_handler(event, context):
         if not result:
             return {
                 "statusCode": 404,
-                "headers": {"Content-Type": "application/json"},
+                "headers": {"Content-Type": "application/json", **CORS_HEADERS},
                 "body": json.dumps({"message": "Artifact not found"})
             }
 
@@ -81,7 +82,7 @@ def lambda_handler(event, context):
 
         return {
             "statusCode": 200,
-            "headers": {"Content-Type": "application/json"},
+            "headers": {"Content-Type": "application/json", **CORS_HEADERS},
             "body": json.dumps({"message": "Artifact deleted", "deleted_id": artifact_id})
         }
 
@@ -89,6 +90,6 @@ def lambda_handler(event, context):
         print("❌ Error deleting artifact:", e)
         return {
             "statusCode": 500,
-            "headers": {"Content-Type": "application/json"},
+            "headers": {"Content-Type": "application/json", **CORS_HEADERS},
             "body": json.dumps({"error": str(e)})
         }

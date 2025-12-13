@@ -4,6 +4,7 @@ import sys
 import jwt
 import datetime
 import hashlib
+from backend.app.cors import CORS_HEADERS
 
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -126,5 +127,5 @@ def response(code, body_obj):
     return {
         "statusCode": code,
         "body": json.dumps(body_obj),
-        "headers": {"Content-Type": "application/json"}
+        "headers": {"Content-Type": "application/json", **CORS_HEADERS}
     }

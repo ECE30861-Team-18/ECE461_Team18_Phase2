@@ -3,7 +3,7 @@ import re
 from rds_connection import run_query
 from auth import require_auth
 import traceback  # <<< LOGGING
-
+from backend.app.cors import CORS_HEADERS  # <<< CORS HEADERS
 
 def _deserialize_json_fields(record, fields=("metadata", "ratings")):
     """Helper to deserialize JSONB fields from the database."""
@@ -117,7 +117,7 @@ def lambda_handler(event, context):
         if not regex_pattern:
             response = {
                 "statusCode": 400,
-                "headers": {"Content-Type": "application/json"},
+                "headers": {"Content-Type": "application/json", **CORS_HEADERS},
                 "body": json.dumps({"error": "Missing regex field in request body"})
             }
             log_response(response)
@@ -132,7 +132,7 @@ def lambda_handler(event, context):
         except DangerousRegexError as danger_err:
             response = {
                 "statusCode": 400,
-                "headers": {"Content-Type": "application/json"},
+                "headers": {"Content-Type": "application/json", **CORS_HEADERS},
                 "body": json.dumps({
                     "error": f"Invalid regex pattern: {str(danger_err)}"
                 })
@@ -143,7 +143,7 @@ def lambda_handler(event, context):
         except re.error as regex_err:
             response = {
                 "statusCode": 400,
-                "headers": {"Content-Type": "application/json"},
+                "headers": {"Content-Type": "application/json", **CORS_HEADERS},
                 "body": json.dumps({
                     "error": f"Invalid regex pattern: {str(regex_err)}"
                 })
@@ -166,7 +166,7 @@ def lambda_handler(event, context):
         if not artifacts:
             response = {
                 "statusCode": 404,
-                "headers": {"Content-Type": "application/json"},
+                "headers": {"Content-Type": "application/json", **CORS_HEADERS},
                 "body": json.dumps({"error": "No artifact found under this regex"})
             }
             log_response(response)
@@ -208,7 +208,7 @@ def lambda_handler(event, context):
         if not matching_artifacts:
             response = {
                 "statusCode": 404,
-                "headers": {"Content-Type": "application/json"},
+                "headers": {"Content-Type": "application/json", **CORS_HEADERS},
                 "body": json.dumps({"error": "No artifact found under this regex"})
             }
             log_response(response)
@@ -227,10 +227,7 @@ def lambda_handler(event, context):
         response = {
             "statusCode": 200,
             "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "OPTIONS,POST",
-                "Access-Control-Allow-Headers": "Content-Type,X-Authorization"
+                "Content-Type": "application/json", **CORS_HEADERS
             },
             "body": json.dumps(metadata_list, default=str)
         }
@@ -240,7 +237,7 @@ def lambda_handler(event, context):
     except json.JSONDecodeError:
         response = {
             "statusCode": 400,
-            "headers": {"Content-Type": "application/json"},
+            "headers": {"Content-Type": "application/json", **CORS_HEADERS},
             "body": json.dumps({"error": "Invalid JSON in request body"})
         }
         log_response(response)
@@ -252,7 +249,7 @@ def lambda_handler(event, context):
 
         response = {
             "statusCode": 500,
-            "headers": {"Content-Type": "application/json"},
+            "headers": {"Content-Type": "application/json", **CORS_HEADERS},
             "body": json.dumps({"error": str(e)})
         }
         log_response(response)

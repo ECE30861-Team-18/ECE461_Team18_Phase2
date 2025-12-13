@@ -22,6 +22,7 @@ def lambda_handler(event, context):
         return response(400, {"error": "Invalid JSON"})
 
     # Extract request fields
+    print("[AUTH] Incoming authentication request", body)
     user = body.get("user", {})
     secret = body.get("secret", {})
 
@@ -57,7 +58,7 @@ def lambda_handler(event, context):
         password_hash = hashlib.sha256(password.encode()).hexdigest()
         
         if password_hash != stored_password_hash:
-            print(f"[AUTH] Invalid password for user: {username}")
+            print(f"[AUTH] Invalid password for user: {username}", password)
             return response(401, {"error": "Invalid credentials"})
         
         # Verify admin status matches if required
@@ -102,7 +103,7 @@ def lambda_handler(event, context):
     resp = {
         "statusCode": 200,
         "body": f'bearer {token}',
-        "headers": {"Content-Type": "text/plain"}
+        "headers": {"Content-Type": "text/plain", **CORS_HEADERS}
     }
     
     # Log the authentication event

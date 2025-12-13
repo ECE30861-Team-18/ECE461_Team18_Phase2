@@ -239,7 +239,7 @@ export default function ArtifactDetailPage() {
           <TabPanel value={tabValue} index={0}>
             {rating ? (
               <Grid container spacing={2}>
-                <Grid item xs={12}>
+                <Grid size={{ xs: 12 }}>
                   <Typography variant="h6" gutterBottom>
                     Overall Score: {rating.net_score.toFixed(2)}
                   </Typography>
@@ -247,7 +247,7 @@ export default function ArtifactDetailPage() {
                 {Object.entries(rating)
                   .filter(([key]) => !key.includes('latency') && key !== 'name' && key !== 'category' && key !== 'size_score')
                   .map(([key, value]) => (
-                    <Grid item xs={12} sm={6} md={4} key={key}>
+                    <Grid size={{ xs: 12, sm: 6, md: 4 }} key={key}>
                       <Card variant="outlined">
                         <CardContent>
                           <Typography color="text.secondary" gutterBottom>
@@ -262,13 +262,13 @@ export default function ArtifactDetailPage() {
                   ))}
                 {rating.size_score && (
                   <>
-                    <Grid item xs={12}>
+                    <Grid size={{ xs : 12 }}>
                       <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>
                         Size Scores by Platform
                       </Typography>
                     </Grid>
                     {Object.entries(rating.size_score).map(([platform, score]) => (
-                      <Grid item xs={12} sm={6} md={3} key={platform}>
+                      <Grid size={{ xs : 12, sm : 6, md: 3}}>
                         <Card variant="outlined">
                           <CardContent>
                             <Typography color="text.secondary" gutterBottom>

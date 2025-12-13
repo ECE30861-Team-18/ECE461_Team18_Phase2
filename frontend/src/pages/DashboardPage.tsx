@@ -12,8 +12,8 @@ import {
   Chip,
   Paper,
   List,
-  ListItem,
   ListItemText,
+  ListItemButton,
 } from '@mui/material';
 import {
   Inventory as InventoryIcon,
@@ -104,7 +104,7 @@ export default function DashboardPage() {
       )}
 
       <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
           <Card>
             <CardContent>
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
@@ -118,7 +118,7 @@ export default function DashboardPage() {
           </Card>
         </Grid>
 
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
           <Card>
             <CardContent>
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
@@ -132,7 +132,7 @@ export default function DashboardPage() {
           </Card>
         </Grid>
 
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
           <Card>
             <CardContent>
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
@@ -146,7 +146,7 @@ export default function DashboardPage() {
           </Card>
         </Grid>
 
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
           <Card>
             <CardContent>
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
@@ -162,7 +162,7 @@ export default function DashboardPage() {
       </Grid>
 
       <Grid container spacing={3}>
-        <Grid item xs={12} md={8}>
+        <Grid size={{ xs: 12, md: 8 }}> 
           <Paper sx={{ p: 3 }}>
             <Typography variant="h6" gutterBottom>
               Recent Artifacts
@@ -170,9 +170,8 @@ export default function DashboardPage() {
             {recentArtifacts.length > 0 ? (
               <List>
                 {recentArtifacts.map((artifact) => (
-                  <ListItem
+                  <ListItemButton
                     key={artifact.id}
-                    button
                     onClick={() =>
                       navigate(`/artifacts/${artifact.type}/${artifact.id}`)
                     }
@@ -182,7 +181,7 @@ export default function DashboardPage() {
                       secondary={`ID: ${artifact.id}`}
                     />
                     <Chip label={artifact.type} size="small" />
-                  </ListItem>
+                  </ListItemButton>
                 ))}
               </List>
             ) : (
@@ -209,7 +208,7 @@ export default function DashboardPage() {
           </Paper>
         </Grid>
 
-        <Grid item xs={12} md={4}>
+        <Grid size={{ xs: 12, md: 4 }}>
           <Paper sx={{ p: 3, mb: 3 }}>
             <Typography variant="h6" gutterBottom>
               Quick Actions

@@ -16,7 +16,6 @@ from url_data import URLData
 from data_retrieval import DataRetriever
 from rds_connection import run_query
 
-
 S3_BUCKET = os.environ.get("S3_BUCKET")
 sqs_client = boto3.client("sqs")
 bedrock_client = boto3.client("bedrock-runtime", region_name="us-east-1")

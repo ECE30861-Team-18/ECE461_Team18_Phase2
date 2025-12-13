@@ -143,13 +143,13 @@ class ApiClient {
     offset?: string
   ): Promise<{ data: ArtifactMetadata[]; offset?: string }> {
     const params = offset ? `?offset=${offset}` : "";
-    return this.request<{ data: ArtifactMetadata[]; offset?: string }>(
-      `/artifacts${params}`,
-      {
-        method: "POST",
-        body: JSON.stringify(queries),
-      }
-    );
+    const response = await this.request<
+      ArtifactMetadata[] | { data: ArtifactMetadata[] }
+    >(`/artifacts${params}`, { method: "POST", body: JSON.stringify(queries) });
+
+    return Array.isArray(response)
+      ? { data: response }
+      : { data: (response as any).data || [] };
   }
 
   async getArtifact(type: ArtifactType, id: string): Promise<Artifact> {

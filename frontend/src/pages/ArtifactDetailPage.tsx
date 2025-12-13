@@ -77,7 +77,7 @@ export default function ArtifactDetailPage() {
   const [tabValue, setTabValue] = useState(0);
   
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [licenseDialogOpen, setLicenseDialogOpen] = useState(false);
+  //const [licenseDialogOpen, setLicenseDialogOpen] = useState(false);
   const [githubUrl, setGithubUrl] = useState('');
   const [licenseResult, setLicenseResult] = useState<boolean | null>(null);
 
@@ -227,7 +227,7 @@ export default function ArtifactDetailPage() {
       </Paper>
 
       <Paper sx={{ width: '100%' }}>
-        <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)}>
+        <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)}>
           {type === 'model' && <Tab label="Rating" icon={<RatingIcon />} iconPosition="start" />}
           {type === 'model' && <Tab label="Lineage" icon={<LineageIcon />} iconPosition="start" />}
           <Tab label="Cost" icon={<CostIcon />} iconPosition="start" />

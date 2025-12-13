@@ -90,7 +90,7 @@ export default function ArtifactsPage() {
   };
 
   const handleFilterChange = (
-    event: React.MouseEvent<HTMLElement>,
+    _: React.MouseEvent<HTMLElement>,
     newFilters: ArtifactType[]
   ) => {
     setFilterTypes(newFilters);
@@ -131,7 +131,7 @@ export default function ArtifactsPage() {
               <ToggleButtonGroup
                 value={searchMode}
                 exclusive
-                onChange={(e, value) => value && setSearchMode(value)}
+                onChange={(_, value) => value && setSearchMode(value)}
                 aria-label="search mode"
               >
                 <ToggleButton value="name" aria-label="name search">

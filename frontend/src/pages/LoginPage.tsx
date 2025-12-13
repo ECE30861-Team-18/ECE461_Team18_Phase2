@@ -144,8 +144,7 @@ export default function LoginPage() {
                 <br />
                 Username: ece30861defaultadminuser
                 <br />
-                Password: correcthorsebatterystaple123(!__+@**(A'\"`;DROP TABLE
-                artifacts;
+                Password: correcthorsebatterystaple123(!__+@**(A'"`;DROP TABLE packages;
               </Typography>
             </Box>
           </CardContent>

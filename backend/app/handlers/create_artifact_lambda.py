@@ -855,7 +855,7 @@ def find_and_link_to_models(
                 except Exception:
                     raw_deps = {}
 
-            code_repos = []
+            code_repos: list = []
             if isinstance(raw_deps, dict):
                 code_repos = raw_deps.get("code_repos", []) or []
 
@@ -900,99 +900,6 @@ def find_and_link_to_models(
 
     if linked_model_ids:
         recalculate_model_ratings(linked_model_ids)
-
-
-def cascade_dataset_links(models: list, dataset_names: list, dependency_state=None):
-    """
-    After linking code repo to models, link datasets mentioned in code README to same models.
-    This creates the chain: dataset -> model (via code repo connection).
-    """
-    dependency_type = "dataset"
-    model_ids = [m.get("id") for m in models if m.get("id") is not None]
-    print(
-        f"[DEPENDENCY CASCADE] Linking datasets {dataset_names} to models {model_ids}..."
-    )
-
-    if dependency_state is None:
-        dependency_state = load_dependency_state(model_ids, (dependency_type,))
-    else:
-        for model_id in model_ids:
-            dependency_state.setdefault(model_id, set())
-
-    # Find all dataset artifacts in database
-    all_datasets = run_query(
-        "SELECT id, name, source_url FROM artifacts WHERE type = 'dataset';", fetch=True
-    )
-
-    if not all_datasets:
-        print("[DEPENDENCY CASCADE] No datasets found")
-        return
-
-    links_created = 0
-
-    for dataset in all_datasets:
-        dataset_id = dataset["id"]
-        dataset_name = dataset["name"]
-        dataset_url = dataset.get("source_url", "")
-
-        # Check if this dataset matches any dataset mentioned in code README
-        for mentioned_ds in dataset_names:
-            score = compute_identifier_score(
-                dataset_name, dataset_url, mentioned_ds)
-            if score >= DATASET_LINK_THRESHOLD:
-                # Link this dataset to all models that the code repo is linked to
-                for model_info in models:
-                    model_id = model_info.get("id")
-                    model_name = model_info.get("name")
-                    if model_id is None:
-                        continue
-                    already_has_dataset = False
-                    if model_id is not None:
-                        existing_types = dependency_state.setdefault(
-                            model_id, set())
-                        if dependency_type in existing_types:
-                            already_has_dataset = True
-                    if already_has_dataset:
-                        print(
-                            f"[DEPENDENCY CASCADE] Model {model_id} already has a {dependency_type}; skipping"
-                        )
-                        continue
-
-                    try:
-                        run_query(
-                            """
-                            INSERT INTO artifact_dependencies 
-                            (model_id, artifact_id, model_name, dependency_name, dependency_type, source)
-                            VALUES (%s, %s, %s, %s, %s, 'cascaded_from_code')
-                            ON CONFLICT DO NOTHING;
-                            """,
-                            (
-                                model_id,
-                                dataset_id,
-                                model_name,
-                                dataset_name,
-                                dependency_type,
-                            ),
-                            fetch=False,
-                        )
-                        links_created += 1
-                        if model_id is not None:
-                            dependency_state.setdefault(model_id, set()).add(
-                                dependency_type
-                            )
-                        print(
-                            f"[DEPENDENCY CASCADE] Linked dataset {dataset_name} -> model {model_id} (score={score:.3f})"
-                        )
-                    except Exception as e:
-                        print(f"[DEPENDENCY CASCADE] Failed: {e}")
-                break
-
-    print(
-        f"[DEPENDENCY CASCADE] Created {links_created} cascaded dataset links")
-
-    # Recalculate ratings for affected models
-    if links_created > 0 and model_ids:
-        recalculate_model_ratings(model_ids)
 
 
 def recalculate_model_ratings(model_ids: list):

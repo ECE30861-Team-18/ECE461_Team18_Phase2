@@ -4,7 +4,7 @@ import sys
 import jwt
 import datetime
 import hashlib
-from backend.app.cors import CORS_HEADERS
+from cors import CORS_HEADERS
 
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

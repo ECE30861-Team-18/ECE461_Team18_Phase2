@@ -7,7 +7,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rds_connection import run_query
 from auth import require_auth
 import traceback  # <<< LOGGING
-from backend.app.cors import CORS_HEADERS  # <<< CORS HEADERS
+from cors import CORS_HEADERS  # <<< CORS HEADERS
 
 def _deserialize_json_fields(record, fields=("metadata", "ratings")):
     for field in fields:

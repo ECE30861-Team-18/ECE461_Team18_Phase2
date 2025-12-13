@@ -1,7 +1,7 @@
 import json
 from rds_connection import run_query
 from auth import require_auth
-from backend.app.cors import CORS_HEADERS
+from cors import CORS_HEADERS
 
 def _deserialize_json_fields(record, fields=("metadata", "ratings")):
     """Helper to deserialize JSONB fields from the database."""

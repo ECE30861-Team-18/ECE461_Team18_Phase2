@@ -100,10 +100,15 @@ class ApiClient {
   async authenticate(
     request: AuthenticationRequest
   ): Promise<AuthenticationToken> {
-    const token = await this.request<AuthenticationToken>("/authenticate", {
+    const response = await fetch(`${API_BASE_URL}/authenticate`, {
       method: "PUT",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(request),
     });
+
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const token = await response.text(); // Changed from .json()
     this.setToken(token);
     return token;
   }

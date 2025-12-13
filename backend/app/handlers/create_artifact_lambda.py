@@ -814,7 +814,7 @@ def find_and_link_to_models(
                 tag_value = tag_lower.split(":", 1)[1].strip()
                 if not tag_value:
                     continue
-                if any(kw == tag_value for kw in dataset_keywords):
+                if any(kw == tag_value or kw in tag_value or tag_value in kw for kw in dataset_keywords):
                     matched = True
                     break
 

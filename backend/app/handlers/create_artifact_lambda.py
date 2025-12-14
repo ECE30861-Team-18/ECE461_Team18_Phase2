@@ -1381,7 +1381,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "get_object",
             Params={
                 "Bucket": S3_BUCKET,
-                "Key": f"model/{artifact_id}/",
+                "Key": f"{artifact_type}/{artifact_id}/",
             },
             ExpiresIn=3600 * 24 * 7,  # 7 days
         )

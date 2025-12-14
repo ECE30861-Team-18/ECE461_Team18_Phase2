@@ -23,7 +23,7 @@ def lambda_handler(event, context):
         if not artifact_id:
             return {
                 "statusCode": 404,
-                "headers": {"Content-Type": "application/json"},
+                "headers": {"Content-Type": "application/json", **CORS_HEADERS},
                 "body": json.dumps({"error": "Artifact does not exist."})
             }
 
@@ -33,7 +33,7 @@ def lambda_handler(event, context):
             print("Invalid artifact_id format:", artifact_id)
             return {
                 "statusCode": 404,
-                "headers": {"Content-Type": "application/json"},
+                "headers": {"Content-Type": "application/json", **CORS_HEADERS},
                 "body": json.dumps({"error": "Artifact does not exist."})
             }
 
@@ -50,7 +50,7 @@ def lambda_handler(event, context):
             print("Artifact not found for ID:", artifact_id)
             return {
                 "statusCode": 404,
-                "headers": {"Content-Type": "application/json"},
+                "headers": {"Content-Type": "application/json", **CORS_HEADERS},
                 "body": json.dumps({"error": "Artifact does not exist."})
             }
 
@@ -59,7 +59,7 @@ def lambda_handler(event, context):
         if root["type"] != "model":
             return {
                 "statusCode": 404,
-                "headers": {"Content-Type": "application/json"},
+                "headers": {"Content-Type": "application/json", **CORS_HEADERS},
                 "body": json.dumps({"error": "Artifact does not exist."})
             }
 
@@ -213,7 +213,7 @@ def lambda_handler(event, context):
             }))
         return {
             "statusCode": 200,
-            "headers": {"Content-Type": "application/json"},
+            "headers": {"Content-Type": "application/json", **CORS_HEADERS},
             "body": json.dumps({
                 "nodes": list(nodes.values()),
                 "edges": edges
@@ -224,6 +224,6 @@ def lambda_handler(event, context):
         print("Lineage error:", str(e))
         return {
             "statusCode": 500,
-            "headers": {"Content-Type": "application/json"},
+            "headers": {"Content-Type": "application/json", **CORS_HEADERS},
             "body": json.dumps({"error": str(e)})
         }

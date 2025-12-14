@@ -3,7 +3,7 @@ import sys
 import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from handlers.create_artifact_lambda import S3_BUCKET
+from create_artifact_lambda import S3_BUCKET
 from rds_connection import run_query
 from auth import require_auth
 import boto3

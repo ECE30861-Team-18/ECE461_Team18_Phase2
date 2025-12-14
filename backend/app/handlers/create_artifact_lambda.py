@@ -1027,10 +1027,11 @@ def find_and_link_to_models(
 
 def recalculate_model_ratings(model_ids: list):
     """
-    Update only dataset_quality and code_quality metrics after linking dependencies.
-    Preserves other expensive metrics (performance, reproducibility) from original rating.
+    Update dependency-related metrics (dataset_quality, code_quality, dataset_and_code_score)
+    after linking dependencies. Preserves other expensive metrics (performance, reproducibility)
+    from the original rating.
     """
-    from submetrics import DatasetQualityMetric, CodeQualityMetric
+    from submetrics import AvailableScoreMetric, DatasetQualityMetric, CodeQualityMetric
 
     for model_id in model_ids:
         try:
@@ -1057,13 +1058,17 @@ def recalculate_model_ratings(model_ids: list):
             # Add model ID for queries
             metadata["id"] = model_id
 
-            # Recalculate only dependency-related metrics
+            # Recalculate only dependency-related metrics plus availability
             dataset_metric = DatasetQualityMetric()
             code_metric = CodeQualityMetric()
+            availability_metric = AvailableScoreMetric()
 
             ratings["dataset_quality"] = dataset_metric.calculate_metric(
                 metadata)
             ratings["code_quality"] = code_metric.calculate_metric(metadata)
+            ratings["dataset_and_code_score"] = availability_metric.calculate_metric(
+                metadata
+            )
 
             # Recalculate net_score with updated metrics (all weights are 0.125)
             net_score = 0.0

@@ -810,9 +810,18 @@ def find_and_link_to_models(
                 if not tag_lower.startswith("dataset:"):
                     continue
                 tag_value = tag_lower.split(":", 1)[1].strip()
-                if not tag_value:
+                tag_clean = re.sub(r"[^a-z0-9]", "", tag_value)
+                if not tag_clean:
                     continue
-                if any(kw == tag_value or kw in tag_value or tag_value in kw for kw in dataset_keywords):
+                for kw in dataset_keywords:
+                    kw_clean = re.sub(r"[^a-z0-9]", "", kw)
+                    if not kw_clean:
+                        continue
+                    if kw_clean == tag_clean or kw_clean in tag_clean or tag_clean in kw_clean:
+                        matched = True
+                        break
+                if matched:
+                    break
                     matched = True
                     break
 

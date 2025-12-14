@@ -1386,6 +1386,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             ExpiresIn=3600 * 24 * 7,  # 7 days
         )
 
+        print("[DEBUG DOWNLOAD URL] Generated download URL:", download_url)
+
         # Update the artifact with download_url
         run_query(
             """

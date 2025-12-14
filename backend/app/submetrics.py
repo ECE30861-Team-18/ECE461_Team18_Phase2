@@ -574,6 +574,38 @@ class AvailableScoreMetric(Metric):
         start_time = time.time()
         
         try:
+            model_id = model_info.get("id") if isinstance(model_info, dict) else None
+            has_linked_dataset = False
+            has_linked_code = False
+
+            # Prefer explicit dependency links; missing ID counts as no links
+            if model_id:
+                try:
+                    from rds_connection import run_query
+                    rows = run_query(
+                        """
+                        SELECT dependency_type, COUNT(*) AS cnt
+                        FROM artifact_dependencies
+                        WHERE model_id = %s AND dependency_type IN ('dataset','code')
+                        GROUP BY dependency_type;
+                        """,
+                        (model_id,),
+                        fetch=True,
+                    ) or []
+                    for row in rows:
+                        dtype = (row.get("dependency_type") or "").lower()
+                        cnt = row.get("cnt") or row.get("count") or 0
+                        if dtype == "dataset" and cnt:
+                            has_linked_dataset = True
+                        elif dtype == "code" and cnt:
+                            has_linked_code = True
+                except Exception:
+                    pass
+
+            if not has_linked_dataset and not has_linked_code:
+                self._latency = int((time.time() - start_time) * 1000)
+                return 0.0
+
             score = 0.0
             
             # Dataset documentation (50% of score)
@@ -719,31 +751,33 @@ class CodeQualityMetric(Metric):
         start_time = time.time()
         
         try:
-            # Check if this model has any linked code repositories in artifact_dependencies table
-            model_id = model_info.get('id')
+            model_id = model_info.get('id') if isinstance(model_info, dict) else None
+
+            # Base score from linked code repositories (75% of metric)
+            repo_score = 0.0
             if model_id:
-                from rds_connection import run_query
-                
-                # Query for linked code repos
-                linked_code = run_query(
-                    """
-                    SELECT COUNT(*) as code_count
-                    FROM artifact_dependencies
-                    WHERE model_id = %s AND dependency_type = 'code';
-                    """,
-                    (model_id,),
-                    fetch=True
-                )
-                
-                if linked_code and linked_code[0]['code_count'] > 0:
-                    score = 1.0
-                else:
-                    score = 0.0
-            else:
-                score = 0.0
-            
+                try:
+                    from rds_connection import run_query
+                    linked_code = run_query(
+                        """
+                        SELECT COUNT(*) as code_count
+                        FROM artifact_dependencies
+                        WHERE model_id = %s AND dependency_type = 'code';
+                        """,
+                        (model_id,),
+                        fetch=True
+                    )
+                    if linked_code and linked_code[0].get('code_count', 0) > 0:
+                        repo_score = 1.0
+                except Exception:
+                    pass
+
+            # Bonus for discovering code files in siblings (25% of metric)
+            sibling_file_score = self._code_file_score(model_info)
+
+            score = (repo_score * 0.75) + sibling_file_score
             self._latency = int((time.time() - start_time) * 1000)
-            return score
+            return clamp(score, 0.0, 1.0)
             
         except Exception as e:
             self._latency = int((time.time() - start_time) * 1000)
@@ -751,6 +785,20 @@ class CodeQualityMetric(Metric):
     
     def calculate_latency(self) -> int:
         return getattr(self, '_latency', 0)
+
+    def _code_file_score(self, model_info: Dict[str, Any]) -> float:
+        """Return up to 0.25 based on presence of code-like files among siblings."""
+        files = model_info.get("siblings", []) if isinstance(model_info, dict) else []
+        indicators = [
+            ".py", ".ipynb", ".js", ".ts", ".r", "train", "eval", "inference",
+            "example", "demo", "config", ".json", ".yaml", ".yml", ".csv", ".txt"
+        ]
+
+        for file_info in files:
+            filename = str(file_info.get("rfilename") or file_info.get("filename") or "").lower()
+            if any(ind in filename for ind in indicators):
+                return 0.25
+        return 0.0
 
 
 class PerformanceMetric(Metric):

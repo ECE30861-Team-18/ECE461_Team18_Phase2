@@ -756,6 +756,14 @@ def _normalize_repo_url(url: str) -> str:
     return normalized
 
 
+def _url_suffix(url: str) -> str:
+    """Return the last path component of a normalized URL for loose matching."""
+    if not url:
+        return ""
+    parts = url.rstrip("/").split("/")
+    return parts[-1] if parts else ""
+
+
 def find_and_link_to_models(
     artifact_id: int,
     artifact_type: str,
@@ -867,13 +875,18 @@ def find_and_link_to_models(
                 code_repos = raw_deps.get("code_repos", []) or []
 
             matched = False
+            artifact_suffix = _url_suffix(artifact_repo_url)
             for entry in code_repos:
                 if isinstance(entry, dict):
                     candidate_url = entry.get("url", "")
                 else:
                     candidate_url = entry
                 norm_candidate = _normalize_repo_url(candidate_url)
+                candidate_suffix = _url_suffix(norm_candidate)
                 if norm_candidate and norm_candidate == artifact_repo_url:
+                    matched = True
+                    break
+                if artifact_suffix and candidate_suffix and candidate_suffix == artifact_suffix:
                     matched = True
                     break
 

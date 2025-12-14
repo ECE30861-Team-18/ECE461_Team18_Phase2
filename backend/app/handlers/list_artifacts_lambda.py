@@ -3,12 +3,13 @@ import sys
 import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from create_artifact_lambda import S3_BUCKET
 from rds_connection import run_query
 from auth import require_auth
 import boto3
 
 s3_client = boto3.client("s3")
+S3_BUCKET = os.environ.get("S3_BUCKET")
+
 
 def _deserialize_json_fields(record, fields=("metadata", "ratings")):
     for field in fields:

@@ -750,6 +750,9 @@ def _normalize_repo_url(url: str) -> str:
     if not url:
         return ""
     normalized = url.strip().lower()
+    # Drop fragments/queries so ?tab=readme or #readme don't block matches
+    normalized = normalized.split("#", 1)[0]
+    normalized = normalized.split("?", 1)[0]
     normalized = normalized.rstrip("/")
     if normalized.endswith(".git"):
         normalized = normalized[:-4]
@@ -760,7 +763,8 @@ def _url_suffix(url: str) -> str:
     """Return the last path component of a normalized URL for loose matching."""
     if not url:
         return ""
-    parts = url.rstrip("/").split("/")
+    cleaned = url.split("#", 1)[0].split("?", 1)[0]
+    parts = cleaned.rstrip("/").split("/")
     return parts[-1] if parts else ""
 
 

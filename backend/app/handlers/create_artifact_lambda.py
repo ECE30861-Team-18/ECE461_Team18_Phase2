@@ -768,6 +768,13 @@ def _url_suffix(url: str) -> str:
     return parts[-1] if parts else ""
 
 
+def _dash_tokens(name: str) -> list[str]:
+    """Split a name on dashes into lowercase tokens."""
+    if not isinstance(name, str):
+        return []
+    return [part.strip().lower() for part in name.split("-") if part and part.strip()]
+
+
 def find_and_link_to_models(
     artifact_id: int,
     artifact_type: str,
@@ -776,9 +783,10 @@ def find_and_link_to_models(
     artifact_metadata: dict,
 ):
     """
-    Layer 1 linking only:
+    Layer 1 linking with Layer 2 fallback:
     - dataset: dash-split keywords matched against model metadata tags that start with "dataset:".
     - code: repository_url matched against model expected_dependencies.code_repos URLs.
+    - layer2 fallback (only if no layer1 match): dash-split name tokens matched between artifact and model names.
     """
     print(f"[DEPENDENCY] Layer1 linking {artifact_type} '{artifact_name}' to models...")
 
@@ -793,13 +801,10 @@ def find_and_link_to_models(
     links_created = 0
     linked_model_ids = []
 
+    artifact_tokens = _dash_tokens(artifact_name)
     dataset_keywords = []
     if artifact_type == "dataset":
-        dataset_keywords = [
-            part.strip().lower()
-            for part in artifact_name.split("-")
-            if part and part.strip()
-        ]
+        dataset_keywords = artifact_tokens
 
     artifact_repo_url = _normalize_repo_url(source_url)
 
@@ -921,6 +926,47 @@ def find_and_link_to_models(
                     print(f"[DEPENDENCY] Failed to link code via layer1: {e}")
 
     print(f"[DEPENDENCY] Layer1 created {links_created} links for '{artifact_name}'")
+
+    # -----------------------------
+    # Layer 2: name-token matching fallback (only if layer1 found nothing)
+    # -----------------------------
+    if not linked_model_ids and artifact_type in ("dataset", "code") and artifact_tokens:
+        print(
+            f"[DEPENDENCY] Layer2 naming match for {artifact_type} '{artifact_name}' (fallback only)"
+        )
+        for model in models:
+            model_id = model.get("id")
+            model_name = model.get("name") or ""
+            model_tokens = _dash_tokens(model_name)
+            if not model_tokens:
+                continue
+
+            # Link on any shared token
+            if any(tok in model_tokens for tok in artifact_tokens):
+                try:
+                    run_query(
+                        """
+                        INSERT INTO artifact_dependencies 
+                        (model_id, artifact_id, model_name, dependency_name, dependency_type, source)
+                        VALUES (%s, %s, %s, %s, %s, 'layer2_name')
+                        ON CONFLICT DO NOTHING;
+                        """,
+                        (
+                            model_id,
+                            artifact_id,
+                            model_name,
+                            artifact_name,
+                            artifact_type,
+                        ),
+                        fetch=False,
+                    )
+                    links_created += 1
+                    linked_model_ids.append(model_id)
+                    print(
+                        f"[DEPENDENCY] Layer2 linked {artifact_type} {artifact_name} -> model {model_id} via name token match"
+                    )
+                except Exception as e:
+                    print(f"[DEPENDENCY] Failed to link via layer2: {e}")
 
     if linked_model_ids:
         recalculate_model_ratings(linked_model_ids)

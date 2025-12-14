@@ -3,9 +3,12 @@ import sys
 import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from backend.app.handlers.create_artifact_lambda import S3_BUCKET
 from rds_connection import run_query
 from auth import require_auth
+import boto3
 
+s3_client = boto3.client("s3")
 
 def _deserialize_json_fields(record, fields=("metadata", "ratings")):
     for field in fields:
@@ -86,6 +89,33 @@ def lambda_handler(event, context):
 
         for artifact in artifacts:
             _deserialize_json_fields(artifact)
+            artifact_id = artifact.get("id")
+            artifact_type = artifact.get("type")
+            print("trying to generate download url for artifact:", artifact_id, artifact_type)
+            # Generate proper S3 HTTPS URL immediately
+            # download_url = f"https://{S3_BUCKET}.s3.us-east-1.amazonaws.com/{artifact_type}/{artifact_id}/"
+
+            download_url = s3_client.generate_presigned_url(
+                "get_object",
+                Params={
+                    "Bucket": S3_BUCKET,
+                    "Key": f"{artifact_type}/{artifact_id}/",
+                },
+                ExpiresIn=3600 * 24 * 7,  # 7 days
+            )
+
+            print("[DEBUG DOWNLOAD URL] Generated download URL:", download_url)
+
+            # Update the artifact with download_url
+            run_query(
+                """
+                UPDATE artifacts
+                SET download_url = %s
+                WHERE id = %s;
+                """,
+                (download_url, artifact_id),
+                fetch=False,
+            )
 
         # ⭐ Convert DB rows → SPEC-CORRECT ArtifactMetadata ⭐
         metadata_list = [

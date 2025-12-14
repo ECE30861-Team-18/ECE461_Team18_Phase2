@@ -28,7 +28,6 @@ import {
   Assessment as RatingIcon,
   AccountTree as LineageIcon,
   AttachMoney as CostIcon,
-  History as AuditIcon,
   Gavel as LicenseIcon,
 } from '@mui/icons-material';
 import {

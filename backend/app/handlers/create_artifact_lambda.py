@@ -745,36 +745,23 @@ def compute_code_link_score(
     return max_code_repo_score
 
 
-def load_dependency_state(model_ids, dependency_types):
-    """Return a map of model_id -> dependency types already linked."""
-    state = {}
-    if not model_ids or not dependency_types:
-        return state
+def _normalize_repo_url(url: str) -> str:
+    """Normalize repo URLs for comparison."""
+    if not url:
+        return ""
+    normalized = url.strip().lower()
+    normalized = normalized.rstrip("/")
+    if normalized.endswith(".git"):
+        normalized = normalized[:-4]
+    return normalized
 
-    placeholders_ids = ", ".join(["%s"] * len(model_ids))
-    placeholders_types = ", ".join(["%s"] * len(dependency_types))
-    query = f"""
-        SELECT model_id, dependency_type
-        FROM artifact_dependencies
-        WHERE model_id IN ({placeholders_ids})
-          AND dependency_type IN ({placeholders_types});
-    """
-    params = tuple(model_ids) + tuple(dependency_types)
 
-    try:
-        rows = run_query(query, params, fetch=True)
-    except Exception as e:
-        print(f"[DEPENDENCY] Failed to load dependency state: {e}")
-        return state
-
-    for row in rows or []:
-        model_id = row.get("model_id")
-        dep_type = row.get("dependency_type")
-        if model_id is None or not dep_type:
-            continue
-        state.setdefault(model_id, set()).add(dep_type)
-
-    return state
+def _url_suffix(url: str) -> str:
+    """Return the last path component of a normalized URL for loose matching."""
+    if not url:
+        return ""
+    parts = url.rstrip("/").split("/")
+    return parts[-1] if parts else ""
 
 
 def find_and_link_to_models(
@@ -782,14 +769,14 @@ def find_and_link_to_models(
     artifact_type: str,
     artifact_name: str,
     source_url: str,
-    readme: str = "",
+    artifact_metadata: dict,
 ):
     """
-    When dataset/code is ingested, find models expecting it and create dependencies.
-    For code repos: also cascade dataset links (code->model implies datasets->model).
+    Layer 1 linking only:
+    - dataset: dash-split keywords matched against model metadata tags that start with "dataset:".
+    - code: repository_url matched against model expected_dependencies.code_repos URLs.
     """
-    print(
-        f"[DEPENDENCY] Linking {artifact_type} '{artifact_name}' to models...")
+    print(f"[DEPENDENCY] Layer1 linking {artifact_type} '{artifact_name}' to models...")
 
     models = run_query(
         "SELECT id, name, metadata FROM artifacts WHERE type = 'model';", fetch=True
@@ -800,265 +787,139 @@ def find_and_link_to_models(
         return
 
     links_created = 0
-    linked_model_ids = []  # Track which models got linked for cascading
-    linked_models_info = []  # Preserve names for cascade inserts
+    linked_model_ids = []
 
-    # For code repos we only allow linking to a single model (best match)
-    best_code_match = None  # (score, model_dict, dependency_type)
+    dataset_keywords = []
+    if artifact_type == "dataset":
+        dataset_keywords = [
+            part.strip().lower()
+            for part in artifact_name.split("-")
+            if part and part.strip()
+        ]
 
-    # For code repos: extract datasets mentioned in code README
-    code_datasets = []
-    if artifact_type == "code" and readme:
-        extracted = extract_dependencies_from_code_readme(readme)
-        code_datasets = extracted.get("datasets", [])
-        print(f"[DEPENDENCY] Code repo mentions datasets: {code_datasets}")
-
-    model_ids = [m.get("id") for m in models if m.get("id") is not None]
-    dependency_state = load_dependency_state(model_ids, DEPENDENCY_CAP_TYPES)
-    for model_id in model_ids:
-        dependency_state.setdefault(model_id, set())
+    artifact_repo_url = _normalize_repo_url(source_url)
 
     for model in models:
+        model_id = model.get("id")
         metadata = model.get("metadata", {})
         if isinstance(metadata, str):
             try:
                 metadata = json.loads(metadata)
-            except:
+            except Exception:
                 continue
-
-        raw_deps = metadata.get("expected_dependencies", {})
-
-        # If stored as JSON string, decode it
-        if isinstance(raw_deps, str):
-            try:
-                raw_deps = json.loads(raw_deps)
-            except:
-                raw_deps = {}
-
-        dependencies = raw_deps if isinstance(raw_deps, dict) else {}
 
         if artifact_type == "dataset":
-            score = compute_dataset_link_score(
-                metadata, artifact_name, source_url)
-            # Fallback: if the model does not declare expected datasets and the
-            # dataset name is strongly similar to the model name, allow linking.
-            if not dependencies:
-                sim = fuzzy_string_similarity(
-                    artifact_name, model.get("name", ""))
-                if sim >= 0.70:
-                    score = sim
-                else:
+            tags = metadata.get("tags", []) or []
+            matched = False
+            for tag in tags:
+                if not isinstance(tag, str):
                     continue
-            elif score < DATASET_LINK_THRESHOLD:
-                continue
-            dep_type = "dataset"
-            matched_score = score
+                tag_lower = tag.lower().strip()
+                if not tag_lower.startswith("dataset:"):
+                    continue
+                tag_value = tag_lower.split(":", 1)[1].strip()
+                tag_clean = re.sub(r"[^a-z0-9]", "", tag_value)
+                if not tag_clean:
+                    continue
+                for kw in dataset_keywords:
+                    kw_clean = re.sub(r"[^a-z0-9]", "", kw)
+                    if not kw_clean:
+                        continue
+                    if kw_clean == tag_clean or kw_clean in tag_clean or tag_clean in kw_clean:
+                        matched = True
+                        break
+                if matched:
+                    break
+                    matched = True
+                    break
 
-            enforce_limit = (
-                dep_type in DEPENDENCY_CAP_TYPES and model.get(
-                    "id") is not None
-            )
-            if enforce_limit:
-                existing_types = dependency_state.setdefault(
-                    model["id"], set())
-                if dep_type in existing_types:
-                    print(
-                        f"[DEPENDENCY] Model {model['id']} already has a {dep_type}; skipping new link"
+            if matched:
+                try:
+                    run_query(
+                        """
+                        INSERT INTO artifact_dependencies 
+                        (model_id, artifact_id, model_name, dependency_name, dependency_type, source)
+                        VALUES (%s, %s, %s, %s, %s, 'layer1_tags')
+                        ON CONFLICT DO NOTHING;
+                        """,
+                        (
+                            model_id,
+                            artifact_id,
+                            model.get("name"),
+                            artifact_name,
+                            "dataset",
+                        ),
+                        fetch=False,
                     )
-                    continue
-            try:
-                run_query(
-                    """
-                    INSERT INTO artifact_dependencies 
-                    (model_id, artifact_id, model_name, dependency_name, dependency_type, source)
-                    VALUES (%s, %s, %s, %s, %s, 'auto_discovered')
-                    ON CONFLICT DO NOTHING;
-                    """,
-                    (
-                        model["id"],
-                        artifact_id,
-                        model.get("name"),
-                        artifact_name,
-                        dep_type,
-                    ),
-                    fetch=False,
-                )
-                links_created += 1
-                linked_model_ids.append(model["id"])
-                linked_models_info.append(
-                    {"id": model["id"], "name": model.get("name")}
-                )
-                if enforce_limit:
-                    dependency_state[model["id"]].add(dep_type)
-                print(
-                    f"[DEPENDENCY] Linked {artifact_name} -> model {model['id']} as {dep_type} (score={matched_score:.3f})"
-                )
-            except Exception as e:
-                print(f"[DEPENDENCY] Failed to link: {e}")
+                    links_created += 1
+                    linked_model_ids.append(model_id)
+                    print(
+                        f"[DEPENDENCY] Layer1 linked dataset {artifact_name} -> model {model_id} via tag match"
+                    )
+                except Exception as e:
+                    print(f"[DEPENDENCY] Failed to link dataset via layer1: {e}")
 
         elif artifact_type == "code":
-            if not dependencies and not code_datasets:
+            if not artifact_repo_url:
                 continue
-            score = compute_code_link_score(
-                metadata, artifact_name, source_url, code_datasets
-            )
-            if score < CODE_LINK_THRESHOLD:
-                continue
-            dep_type = "code"
-            matched_score = score
 
-            enforce_limit = (
-                dep_type in DEPENDENCY_CAP_TYPES and model.get(
-                    "id") is not None
-            )
-            if enforce_limit:
-                existing_types = dependency_state.setdefault(
-                    model["id"], set())
-                if dep_type in existing_types:
-                    print(
-                        f"[DEPENDENCY] Model {model['id']} already has a {dep_type}; skipping new link"
+            raw_deps = metadata.get("expected_dependencies", {})
+            if isinstance(raw_deps, str):
+                try:
+                    raw_deps = json.loads(raw_deps)
+                except Exception:
+                    raw_deps = {}
+
+            code_repos: list = []
+            if isinstance(raw_deps, dict):
+                code_repos = raw_deps.get("code_repos", []) or []
+
+            matched = False
+            artifact_suffix = _url_suffix(artifact_repo_url)
+            for entry in code_repos:
+                if isinstance(entry, dict):
+                    candidate_url = entry.get("url", "")
+                else:
+                    candidate_url = entry
+                norm_candidate = _normalize_repo_url(candidate_url)
+                candidate_suffix = _url_suffix(norm_candidate)
+                if norm_candidate and norm_candidate == artifact_repo_url:
+                    matched = True
+                    break
+                if artifact_suffix and candidate_suffix and candidate_suffix == artifact_suffix:
+                    matched = True
+                    break
+
+            if matched:
+                try:
+                    run_query(
+                        """
+                        INSERT INTO artifact_dependencies 
+                        (model_id, artifact_id, model_name, dependency_name, dependency_type, source)
+                        VALUES (%s, %s, %s, %s, %s, 'layer1_code_repo')
+                        ON CONFLICT DO NOTHING;
+                        """,
+                        (
+                            model_id,
+                            artifact_id,
+                            model.get("name"),
+                            artifact_name,
+                            "code",
+                        ),
+                        fetch=False,
                     )
-                    continue
+                    links_created += 1
+                    linked_model_ids.append(model_id)
+                    print(
+                        f"[DEPENDENCY] Layer1 linked code repo {artifact_name} -> model {model_id} via code_repo match"
+                    )
+                except Exception as e:
+                    print(f"[DEPENDENCY] Failed to link code via layer1: {e}")
 
-            # Select the best single model for this code repo
-            if best_code_match is None or matched_score > best_code_match[0]:
-                best_code_match = (matched_score, model, dep_type)
+    print(f"[DEPENDENCY] Layer1 created {links_created} links for '{artifact_name}'")
 
-        else:
-            continue
-
-    print(f"[DEPENDENCY] Created {links_created} links for '{artifact_name}'")
-
-    # If code artifact, link only the single best match (exclusive to one model)
-    if artifact_type == "code" and best_code_match is not None:
-        matched_score, model, dep_type = best_code_match
-        try:
-            run_query(
-                """
-                INSERT INTO artifact_dependencies 
-                (model_id, artifact_id, model_name, dependency_name, dependency_type, source)
-                VALUES (%s, %s, %s, %s, %s, 'auto_discovered')
-                ON CONFLICT DO NOTHING;
-                """,
-                (model["id"], artifact_id, model.get(
-                    "name"), artifact_name, dep_type),
-                fetch=False,
-            )
-            links_created += 1
-            linked_model_ids.append(model["id"])
-            linked_models_info.append(
-                {"id": model["id"], "name": model.get("name")})
-            if dep_type in DEPENDENCY_CAP_TYPES:
-                dependency_state.setdefault(model["id"], set()).add(dep_type)
-            print(
-                f"[DEPENDENCY] Linked {artifact_name} -> model {model['id']} as {dep_type} (score={matched_score:.3f}) [exclusive]"
-            )
-        except Exception as e:
-            print(f"[DEPENDENCY] Failed to link exclusive code: {e}")
-
-    print(f"[DEPENDENCY] Created {links_created} links for '{artifact_name}'")
-
-    # Recalculate ratings for models that got new dependencies
     if linked_model_ids:
         recalculate_model_ratings(linked_model_ids)
-
-    # CASCADE: If code repo linked to models, link datasets from code README to same models
-    if artifact_type == "code" and linked_models_info and code_datasets:
-        cascade_dataset_links(linked_models_info,
-                              code_datasets, dependency_state)
-
-
-def cascade_dataset_links(models: list, dataset_names: list, dependency_state=None):
-    """
-    After linking code repo to models, link datasets mentioned in code README to same models.
-    This creates the chain: dataset -> model (via code repo connection).
-    """
-    dependency_type = "dataset"
-    model_ids = [m.get("id") for m in models if m.get("id") is not None]
-    print(
-        f"[DEPENDENCY CASCADE] Linking datasets {dataset_names} to models {model_ids}..."
-    )
-
-    if dependency_state is None:
-        dependency_state = load_dependency_state(model_ids, (dependency_type,))
-    else:
-        for model_id in model_ids:
-            dependency_state.setdefault(model_id, set())
-
-    # Find all dataset artifacts in database
-    all_datasets = run_query(
-        "SELECT id, name, source_url FROM artifacts WHERE type = 'dataset';", fetch=True
-    )
-
-    if not all_datasets:
-        print("[DEPENDENCY CASCADE] No datasets found")
-        return
-
-    links_created = 0
-
-    for dataset in all_datasets:
-        dataset_id = dataset["id"]
-        dataset_name = dataset["name"]
-        dataset_url = dataset.get("source_url", "")
-
-        # Check if this dataset matches any dataset mentioned in code README
-        for mentioned_ds in dataset_names:
-            score = compute_identifier_score(
-                dataset_name, dataset_url, mentioned_ds)
-            if score >= DATASET_LINK_THRESHOLD:
-                # Link this dataset to all models that the code repo is linked to
-                for model_info in models:
-                    model_id = model_info.get("id")
-                    model_name = model_info.get("name")
-                    if model_id is None:
-                        continue
-                    already_has_dataset = False
-                    if model_id is not None:
-                        existing_types = dependency_state.setdefault(
-                            model_id, set())
-                        if dependency_type in existing_types:
-                            already_has_dataset = True
-                    if already_has_dataset:
-                        print(
-                            f"[DEPENDENCY CASCADE] Model {model_id} already has a {dependency_type}; skipping"
-                        )
-                        continue
-
-                    try:
-                        run_query(
-                            """
-                            INSERT INTO artifact_dependencies 
-                            (model_id, artifact_id, model_name, dependency_name, dependency_type, source)
-                            VALUES (%s, %s, %s, %s, %s, 'cascaded_from_code')
-                            ON CONFLICT DO NOTHING;
-                            """,
-                            (
-                                model_id,
-                                dataset_id,
-                                model_name,
-                                dataset_name,
-                                dependency_type,
-                            ),
-                            fetch=False,
-                        )
-                        links_created += 1
-                        if model_id is not None:
-                            dependency_state.setdefault(model_id, set()).add(
-                                dependency_type
-                            )
-                        print(
-                            f"[DEPENDENCY CASCADE] Linked dataset {dataset_name} -> model {model_id} (score={score:.3f})"
-                        )
-                    except Exception as e:
-                        print(f"[DEPENDENCY CASCADE] Failed: {e}")
-                break
-
-    print(
-        f"[DEPENDENCY CASCADE] Created {links_created} cascaded dataset links")
-
-    # Recalculate ratings for affected models
-    if links_created > 0 and model_ids:
-        recalculate_model_ratings(model_ids)
 
 
 def recalculate_model_ratings(model_ids: list):
@@ -1439,12 +1300,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # 6a. Link dataset/code to models (uses artifact_dependencies table)
         # --------------------------
         if artifact_type in ("dataset", "code"):
-            readme_for_code = (
-                metadata_dict.get(
-                    "readme", "") if artifact_type == "code" else ""
-            )
             find_and_link_to_models(
-                artifact_id, artifact_type, artifact_name, url, readme_for_code
+                artifact_id, artifact_type, artifact_name, url, metadata_dict
             )
 
         # --------------------------

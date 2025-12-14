@@ -230,7 +230,7 @@ export default function ArtifactDetailPage() {
           {type === 'model' && <Tab label="Rating" icon={<RatingIcon />} iconPosition="start" />}
           {type === 'model' && <Tab label="Lineage" icon={<LineageIcon />} iconPosition="start" />}
           <Tab label="Cost" icon={<CostIcon />} iconPosition="start" />
-          <Tab label="Audit Trail" icon={<AuditIcon />} iconPosition="start" />
+          {/*<Tab label="Audit Trail" icon={<AuditIcon />} iconPosition="start" />*/}
           {type === 'model' && <Tab label="License Check" icon={<LicenseIcon />} iconPosition="start" />}
         </Tabs>
 

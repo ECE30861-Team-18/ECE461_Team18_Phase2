@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import {
   Box,
   Paper,
@@ -20,7 +20,7 @@ import {
   DialogContent,
   DialogActions,
   TextField,
-} from '@mui/material';
+} from "@mui/material";
 import {
   ArrowBack as BackIcon,
   Delete as DeleteIcon,
@@ -29,15 +29,15 @@ import {
   AccountTree as LineageIcon,
   AttachMoney as CostIcon,
   Gavel as LicenseIcon,
-} from '@mui/icons-material';
+} from "@mui/icons-material";
 import {
   Artifact,
   ArtifactType,
   ModelRating,
   ArtifactLineageGraph,
   ArtifactCost,
-} from '../types';
-import apiClient from '../api';
+} from "../types";
+import apiClient from "../api";
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -69,14 +69,14 @@ export default function ArtifactDetailPage() {
   const [lineage, setLineage] = useState<ArtifactLineageGraph | null>(null);
   const [cost, setCost] = useState<ArtifactCost | null>(null);
   //const [audit, setAudit] = useState<ArtifactAuditEntry[]>([]);
-  
+
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [tabValue, setTabValue] = useState(0);
-  
+
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   //const [licenseDialogOpen, setLicenseDialogOpen] = useState(false);
-  const [githubUrl, setGithubUrl] = useState('');
+  const [githubUrl, setGithubUrl] = useState("");
   const [licenseResult, setLicenseResult] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -89,7 +89,7 @@ export default function ArtifactDetailPage() {
     if (!type || !id) return;
 
     setLoading(true);
-    setError('');
+    setError("");
 
     try {
       // Load basic artifact data
@@ -97,19 +97,19 @@ export default function ArtifactDetailPage() {
       setArtifact(artifactData);
 
       // Load additional data based on type
-      if (type === 'model') {
+      if (type === "model") {
         try {
           const ratingData = await apiClient.getModelRating(id);
           setRating(ratingData);
         } catch (err) {
-          console.warn('Rating not available:', err);
+          console.warn("Rating not available:", err);
         }
 
         try {
           const lineageData = await apiClient.getModelLineage(id);
           setLineage(lineageData);
         } catch (err) {
-          console.warn('Lineage not available:', err);
+          console.warn("Lineage not available:", err);
         }
       }
 
@@ -118,7 +118,7 @@ export default function ArtifactDetailPage() {
         const costData = await apiClient.getArtifactCost(type, id, true);
         setCost(costData);
       } catch (err) {
-        console.warn('Cost not available:', err);
+        console.warn("Cost not available:", err);
       }
 
       // // Load audit trail
@@ -129,7 +129,7 @@ export default function ArtifactDetailPage() {
       //   console.warn('Audit trail not available:', err);
       // }
     } catch (err: any) {
-      setError(err.message || 'Failed to load artifact');
+      setError(err.message || "Failed to load artifact");
     } finally {
       setLoading(false);
     }
@@ -140,9 +140,9 @@ export default function ArtifactDetailPage() {
 
     try {
       await apiClient.deleteArtifact(type, id);
-      navigate('/artifacts');
+      navigate("/artifacts");
     } catch (err: any) {
-      setError(err.message || 'Failed to delete artifact');
+      setError(err.message || "Failed to delete artifact");
     }
     setDeleteDialogOpen(false);
   };
@@ -151,16 +151,18 @@ export default function ArtifactDetailPage() {
     if (!id || !githubUrl) return;
 
     try {
-      const result = await apiClient.checkModelLicense(id, { github_url: githubUrl });
+      const result = await apiClient.checkModelLicense(id, {
+        github_url: githubUrl,
+      });
       setLicenseResult(result);
     } catch (err: any) {
-      setError(err.message || 'License check failed');
+      setError(err.message || "License check failed");
     }
   };
 
   if (loading) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+      <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
         <CircularProgress />
       </Box>
     );
@@ -169,11 +171,11 @@ export default function ArtifactDetailPage() {
   if (error || !artifact) {
     return (
       <Box>
-        <Button startIcon={<BackIcon />} onClick={() => navigate('/artifacts')}>
+        <Button startIcon={<BackIcon />} onClick={() => navigate("/artifacts")}>
           Back to Artifacts
         </Button>
         <Alert severity="error" sx={{ mt: 2 }}>
-          {error || 'Artifact not found'}
+          {error || "Artifact not found"}
         </Alert>
       </Box>
     );
@@ -181,21 +183,34 @@ export default function ArtifactDetailPage() {
 
   return (
     <Box>
-      <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Button startIcon={<BackIcon />} onClick={() => navigate('/artifacts')}>
+      <Box
+        sx={{
+          mb: 3,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}
+      >
+        <Button startIcon={<BackIcon />} onClick={() => navigate("/artifacts")}>
           Back to Artifacts
         </Button>
         <Box>
-          {artifact.data.download_url && (
-            <Button
-              variant="outlined"
-              startIcon={<DownloadIcon />}
-              href={artifact.data.download_url}
-              sx={{ mr: 1 }}
-            >
-              Download
-            </Button>
-          )}
+          <Button
+            variant="outlined"
+            startIcon={<DownloadIcon />}
+            onClick={async () => {
+              const response = await fetch(artifact.data.download_url!);
+              const blob = await response.blob();
+              const url = window.URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = artifact.metadata.name;
+              a.click();
+            }}
+            sx={{ mr: 1 }}
+          >
+            Download
+          </Button>
           <Button
             variant="outlined"
             color="error"
@@ -208,7 +223,7 @@ export default function ArtifactDetailPage() {
       </Box>
 
       <Paper sx={{ p: 3, mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 2 }}>
           <Typography variant="h4">{artifact.metadata.name}</Typography>
           <Chip label={artifact.metadata.type} color="primary" />
         </Box>
@@ -217,22 +232,32 @@ export default function ArtifactDetailPage() {
         </Typography>
         <Divider sx={{ my: 2 }} />
         <Typography variant="body1">
-          <strong>Source URL:</strong>{' '}
+          <strong>Source URL:</strong>{" "}
           <Link href={artifact.data.url} target="_blank" rel="noopener">
             {artifact.data.url}
           </Link>
         </Typography>
       </Paper>
 
-      <Paper sx={{ width: '100%' }}>
+      <Paper sx={{ width: "100%" }}>
         <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)}>
-          {type === 'model' && <Tab label="Rating" icon={<RatingIcon />} iconPosition="start" />}
-          {type === 'model' && <Tab label="Lineage" icon={<LineageIcon />} iconPosition="start" />}
+          {type === "model" && (
+            <Tab label="Rating" icon={<RatingIcon />} iconPosition="start" />
+          )}
+          {type === "model" && (
+            <Tab label="Lineage" icon={<LineageIcon />} iconPosition="start" />
+          )}
           <Tab label="Cost" icon={<CostIcon />} iconPosition="start" />
-          {type === 'model' && <Tab label="License Check" icon={<LicenseIcon />} iconPosition="start" />}
+          {type === "model" && (
+            <Tab
+              label="License Check"
+              icon={<LicenseIcon />}
+              iconPosition="start"
+            />
+          )}
         </Tabs>
 
-        {type === 'model' && (
+        {type === "model" && (
           <TabPanel value={tabValue} index={0}>
             {rating ? (
               <Grid container spacing={2}>
@@ -242,16 +267,24 @@ export default function ArtifactDetailPage() {
                   </Typography>
                 </Grid>
                 {Object.entries(rating)
-                  .filter(([key]) => !key.includes('latency') && key !== 'name' && key !== 'category' && key !== 'size_score')
+                  .filter(
+                    ([key]) =>
+                      !key.includes("latency") &&
+                      key !== "name" &&
+                      key !== "category" &&
+                      key !== "size_score"
+                  )
                   .map(([key, value]) => (
                     <Grid size={{ xs: 12, sm: 6, md: 4 }} key={key}>
                       <Card variant="outlined">
                         <CardContent>
                           <Typography color="text.secondary" gutterBottom>
-                            {key.replace(/_/g, ' ').toUpperCase()}
+                            {key.replace(/_/g, " ").toUpperCase()}
                           </Typography>
                           <Typography variant="h5">
-                            {typeof value === 'number' ? value.toFixed(2) : value}
+                            {typeof value === "number"
+                              ? value.toFixed(2)
+                              : value}
                           </Typography>
                         </CardContent>
                       </Card>
@@ -259,23 +292,27 @@ export default function ArtifactDetailPage() {
                   ))}
                 {rating.size_score && (
                   <>
-                    <Grid size={{ xs : 12 }}>
+                    <Grid size={{ xs: 12 }}>
                       <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>
                         Size Scores by Platform
                       </Typography>
                     </Grid>
-                    {Object.entries(rating.size_score).map(([platform, score]) => (
-                      <Grid size={{ xs : 12, sm : 6, md: 3}}>
-                        <Card variant="outlined">
-                          <CardContent>
-                            <Typography color="text.secondary" gutterBottom>
-                              {platform.replace(/_/g, ' ').toUpperCase()}
-                            </Typography>
-                            <Typography variant="h5">{score.toFixed(2)}</Typography>
-                          </CardContent>
-                        </Card>
-                      </Grid>
-                    ))}
+                    {Object.entries(rating.size_score).map(
+                      ([platform, score]) => (
+                        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                          <Card variant="outlined">
+                            <CardContent>
+                              <Typography color="text.secondary" gutterBottom>
+                                {platform.replace(/_/g, " ").toUpperCase()}
+                              </Typography>
+                              <Typography variant="h5">
+                                {score.toFixed(2)}
+                              </Typography>
+                            </CardContent>
+                          </Card>
+                        </Grid>
+                      )
+                    )}
                   </>
                 )}
               </Grid>
@@ -285,7 +322,7 @@ export default function ArtifactDetailPage() {
           </TabPanel>
         )}
 
-        {type === 'model' && (
+        {type === "model" && (
           <TabPanel value={tabValue} index={1}>
             {lineage ? (
               <Box>
@@ -295,12 +332,16 @@ export default function ArtifactDetailPage() {
                 <Typography variant="body2" paragraph>
                   Nodes: {lineage.nodes.length}, Edges: {lineage.edges.length}
                 </Typography>
-                
+
                 <Typography variant="subtitle1" gutterBottom sx={{ mt: 2 }}>
                   Nodes:
                 </Typography>
                 {lineage.nodes.map((node) => (
-                  <Card key={node.artifact_id} variant="outlined" sx={{ mb: 1 }}>
+                  <Card
+                    key={node.artifact_id}
+                    variant="outlined"
+                    sx={{ mb: 1 }}
+                  >
                     <CardContent>
                       <Typography variant="body1" fontWeight="medium">
                         {node.name}
@@ -317,7 +358,8 @@ export default function ArtifactDetailPage() {
                 </Typography>
                 {lineage.edges.map((edge, idx) => (
                   <Typography key={idx} variant="body2" sx={{ mb: 0.5 }}>
-                    {edge.from_node_artifact_id} → {edge.to_node_artifact_id} ({edge.relationship})
+                    {edge.from_node_artifact_id} → {edge.to_node_artifact_id} (
+                    {edge.relationship})
                   </Typography>
                 ))}
               </Box>
@@ -327,7 +369,7 @@ export default function ArtifactDetailPage() {
           </TabPanel>
         )}
 
-        <TabPanel value={tabValue} index={type === 'model' ? 2 : 0}>
+        <TabPanel value={tabValue} index={type === "model" ? 2 : 0}>
           {cost ? (
             <Box>
               <Typography variant="h6" gutterBottom>
@@ -356,13 +398,12 @@ export default function ArtifactDetailPage() {
           )}
         </TabPanel>
 
-
-        {type === 'model' && (
+        {type === "model" && (
           <TabPanel value={tabValue} index={3}>
             <Typography variant="h6" gutterBottom>
               License Compatibility Check
             </Typography>
-            <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+            <Box sx={{ display: "flex", gap: 2, mb: 2 }}>
               <TextField
                 fullWidth
                 label="GitHub Repository URL"
@@ -379,10 +420,10 @@ export default function ArtifactDetailPage() {
               </Button>
             </Box>
             {licenseResult !== null && (
-              <Alert severity={licenseResult ? 'success' : 'error'}>
+              <Alert severity={licenseResult ? "success" : "error"}>
                 {licenseResult
-                  ? 'License is compatible for fine-tuning and inference'
-                  : 'License compatibility issues detected'}
+                  ? "License is compatible for fine-tuning and inference"
+                  : "License compatibility issues detected"}
               </Alert>
             )}
           </TabPanel>
@@ -390,10 +431,14 @@ export default function ArtifactDetailPage() {
       </Paper>
 
       {/* Delete Confirmation Dialog */}
-      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={() => setDeleteDialogOpen(false)}
+      >
         <DialogTitle>Delete Artifact?</DialogTitle>
         <DialogContent>
-          Are you sure you want to delete "{artifact.metadata.name}"? This action cannot be undone.
+          Are you sure you want to delete "{artifact.metadata.name}"? This
+          action cannot be undone.
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>

@@ -229,7 +229,6 @@ export default function ArtifactDetailPage() {
           {type === 'model' && <Tab label="Rating" icon={<RatingIcon />} iconPosition="start" />}
           {type === 'model' && <Tab label="Lineage" icon={<LineageIcon />} iconPosition="start" />}
           <Tab label="Cost" icon={<CostIcon />} iconPosition="start" />
-          {/*<Tab label="Audit Trail" icon={<AuditIcon />} iconPosition="start" />*/}
           {type === 'model' && <Tab label="License Check" icon={<LicenseIcon />} iconPosition="start" />}
         </Tabs>
 
@@ -357,35 +356,9 @@ export default function ArtifactDetailPage() {
           )}
         </TabPanel>
 
-        {/* <TabPanel value={tabValue} index={type === 'model' ? 3 : 1}>
-          {audit.length > 0 ? (
-            <Box>
-              <Typography variant="h6" gutterBottom>
-                Audit History
-              </Typography>
-              {audit.map((entry, idx) => (
-                <Card key={idx} variant="outlined" sx={{ mb: 2 }}>
-                  <CardContent>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                      <Chip label={entry.action} size="small" />
-                      <Typography variant="caption" color="text.secondary">
-                        {new Date(entry.date).toLocaleString()}
-                      </Typography>
-                    </Box>
-                    <Typography variant="body2">
-                      User: {entry.user.name} {entry.user.is_admin && '(Admin)'}
-                    </Typography>
-                  </CardContent>
-                </Card>
-              ))}
-            </Box>
-          ) : (
-            <Alert severity="info">No audit history available</Alert>
-          )}
-        </TabPanel> */}
 
         {type === 'model' && (
-          <TabPanel value={tabValue} index={4}>
+          <TabPanel value={tabValue} index={3}>
             <Typography variant="h6" gutterBottom>
               License Compatibility Check
             </Typography>

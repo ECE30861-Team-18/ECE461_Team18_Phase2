@@ -5,7 +5,7 @@ from url_handler import URLHandler
 from data_retrieval import GitHubAPIClient
 from auth import require_auth
 import traceback  # <<< LOGGING
-
+from cors import CORS_HEADERS  # <<< CORS HEADERS
 
 # -----------------------------
 # LOGGING HELPERS
@@ -70,7 +70,7 @@ def lambda_handler(event, context):
         if not artifact_id:
             response = {
                 "statusCode": 400,
-                "headers": {"Content-Type": "application/json"},
+                "headers": {"Content-Type": "application/json", **CORS_HEADERS},
                 "body": json.dumps({"error": "The license check request is malformed or references an unsupported usage context."})
             }
             log_response(response)  # <<< LOGGING
@@ -84,7 +84,7 @@ def lambda_handler(event, context):
             except json.JSONDecodeError:
                 response = {
                     "statusCode": 400,
-                    "headers": {"Content-Type": "application/json"},
+                    "headers": {"Content-Type": "application/json", **CORS_HEADERS},
                     "body": json.dumps({"error": "The license check request is malformed or references an unsupported usage context."})
                 }
                 log_response(response)  # <<< LOGGING
@@ -94,7 +94,7 @@ def lambda_handler(event, context):
         if not github_url:
             response = {
                 "statusCode": 400,
-                "headers": {"Content-Type": "application/json"},
+                "headers": {"Content-Type": "application/json", **CORS_HEADERS},
                 "body": json.dumps({"error": "The license check request is malformed or references an unsupported usage context."})
             }
             log_response(response)  # <<< LOGGING
@@ -109,7 +109,7 @@ def lambda_handler(event, context):
             print(f"[LICENSE_CHECK] Invalid artifact ID format: {artifact_id}")
             response = {
                 "statusCode": 404,
-                "headers": {"Content-Type": "application/json"},
+                "headers": {"Content-Type": "application/json", **CORS_HEADERS},
                 "body": json.dumps({"error": "The artifact or GitHub project could not be found."})
             }
             log_response(response)  # <<< LOGGING
@@ -128,7 +128,7 @@ def lambda_handler(event, context):
             print(f"[LICENSE_CHECK] Artifact {artifact_id} not found or not a model")
             response = {
                 "statusCode": 404,
-                "headers": {"Content-Type": "application/json"},
+                "headers": {"Content-Type": "application/json", **CORS_HEADERS},
                 "body": json.dumps({"error": "The artifact or GitHub project could not be found."})
             }
             log_response(response)  # <<< LOGGING
@@ -156,7 +156,7 @@ def lambda_handler(event, context):
             print(f"[LICENSE_CHECK] GitHub repository not found")
             response = {
                 "statusCode": 404,
-                "headers": {"Content-Type": "application/json"},
+                "headers": {"Content-Type": "application/json", **CORS_HEADERS},
                 "body": json.dumps({"error": "The artifact or GitHub project could not be found."})
             }
             log_response(response)  # <<< LOGGING
@@ -166,7 +166,7 @@ def lambda_handler(event, context):
             print(f"[LICENSE_CHECK] Failed to retrieve GitHub license information")
             response = {
                 "statusCode": 502,
-                "headers": {"Content-Type": "application/json"},
+                "headers": {"Content-Type": "application/json", **CORS_HEADERS},
                 "body": json.dumps({"error": "External license information could not be retrieved."})
             }
             log_response(response)  # <<< LOGGING
@@ -199,7 +199,7 @@ def lambda_handler(event, context):
 
         response = {
             "statusCode": 500,
-            "headers": {"Content-Type": "application/json"},
+            "headers": {"Content-Type": "application/json", **CORS_HEADERS},
             "body": json.dumps({"error": "Internal server error", "details": str(e)})
         }
         log_response(response)  # <<< LOGGING

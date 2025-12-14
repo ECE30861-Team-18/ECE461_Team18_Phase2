@@ -790,7 +790,9 @@ OUTPUT REQUIREMENTS:
             
             # Have AI check README for performance metrics 
             readme_score = self._evaluate_performance_in_readme(model_info.get("readme", ""))
-            score += readme_score
+            # Nudge strictness slightly down to award marginally lower scores overall
+            adjusted_score = max(0.0, readme_score - 0.05)
+            score += adjusted_score
 
             self._latency = int((time.time() - start_time) * 1000)
             return score

@@ -18,6 +18,7 @@ from rds_connection import run_query
 
 S3_BUCKET = os.environ.get("S3_BUCKET")
 sqs_client = boto3.client("sqs")
+s3_client = boto3.client("s3")
 bedrock_client = boto3.client("bedrock-runtime", region_name="us-east-1")
 DEPENDENCY_CAP_TYPES = ("dataset", "code")
 DATASET_LINK_THRESHOLD = 0.75
@@ -1374,7 +1375,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         artifact_id = result[0]["id"]
 
         # Generate proper S3 HTTPS URL immediately
-        download_url = f"https://{S3_BUCKET}.s3.us-east-1.amazonaws.com/{artifact_type}/{artifact_id}/"
+        # download_url = f"https://{S3_BUCKET}.s3.us-east-1.amazonaws.com/{artifact_type}/{artifact_id}/"
+
+        download_url = s3_client.generate_presigned_url(
+            "get_object",
+            Params={
+                "Bucket": S3_BUCKET,
+                "Key": f"model/{artifact_id}/",
+            },
+            ExpiresIn=3600 * 24 * 7,  # 7 days
+        )
 
         # Update the artifact with download_url
         run_query(

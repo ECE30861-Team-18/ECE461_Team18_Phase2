@@ -23,6 +23,7 @@ bedrock_client = boto3.client("bedrock-runtime", region_name="us-east-1")
 DEPENDENCY_CAP_TYPES = ("dataset", "code")
 DATASET_LINK_THRESHOLD = 0.75
 CODE_LINK_THRESHOLD = 0.75
+NET_SCORE_THRESHOLD = 0.5
 
 
 # -----------------------------
@@ -1037,7 +1038,7 @@ def recalculate_model_ratings(model_ids: list):
     for model_id in model_ids:
         try:
             model_result = run_query(
-                "SELECT id, metadata, ratings FROM artifacts WHERE id = %s;",
+                "SELECT id, metadata, ratings, status, type, source_url FROM artifacts WHERE id = %s;",
                 (model_id,),
                 fetch=True,
             )
@@ -1055,6 +1056,10 @@ def recalculate_model_ratings(model_ids: list):
             ratings = model.get("ratings", {})
             if isinstance(ratings, str):
                 ratings = json.loads(ratings)
+
+            current_status = model.get("status", "upload_pending")
+            artifact_type = model.get("type", "model")
+            source_url = model.get("source_url")
 
             # Add model ID for queries
             metadata["id"] = model_id
@@ -1095,6 +1100,47 @@ def recalculate_model_ratings(model_ids: list):
                 (json.dumps(ratings), ratings["net_score"], model_id),
                 fetch=False,
             )
+
+            # If the model was previously rejected but now exceeds the threshold,
+            # flip it back to upload_pending and trigger ingestion.
+            try:
+                if (
+                    artifact_type == "model"
+                    and current_status == "rejected"
+                    and float(ratings["net_score"]) > NET_SCORE_THRESHOLD
+                ):
+                    refreshed_download_url = s3_client.generate_presigned_url(
+                        "get_object",
+                        Params={
+                            "Bucket": S3_BUCKET,
+                            "Key": f"{artifact_type}/{model_id}/",
+                        },
+                        ExpiresIn=3600 * 24 * 7,
+                    )
+
+                    run_query(
+                        """
+                        UPDATE artifacts
+                        SET status = %s, download_url = %s
+                        WHERE id = %s;
+                        """,
+                        ("upload_pending", refreshed_download_url, model_id),
+                        fetch=False,
+                    )
+
+                    sqs_client.send_message(
+                        QueueUrl=os.environ.get("INGEST_QUEUE_URL"),
+                        MessageBody=json.dumps(
+                            {
+                                "artifact_id": model_id,
+                                "artifact_type": artifact_type,
+                                "identifier": metadata.get("id"),
+                                "source_url": source_url,
+                            }
+                        ),
+                    )
+            except Exception as e:
+                print(f"[RATING UPDATE] Failed status promotion for model {model_id}: {e}")
 
         except Exception as e:
             print(f"[RATING UPDATE] Failed for model {model_id}: {e}")
@@ -1331,6 +1377,17 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             rating = {}
             net_score = None
 
+        artifact_status = "upload_pending"
+        if artifact_type == "model":
+            try:
+                artifact_status = (
+                    "upload_pending"
+                    if float(net_score) > NET_SCORE_THRESHOLD
+                    else "rejected"
+                )
+            except Exception:
+                artifact_status = "rejected"
+
         metadata_dict = repo_data.__dict__.copy()
         metadata_dict["requested_name"] = artifact_name
         if metadata_dict.get("created_at"):
@@ -1351,9 +1408,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         metadata_json = json.dumps(metadata_dict)
 
         # --------------------------
-        # 6. Insert as upload_pending with download_url
+        # 6. Insert artifact with status gate
         # --------------------------
-        # First get the artifact_id, then construct download_url
+        # First get the artifact_id; download_url is assigned after status decisions
         result = run_query(
             """
             INSERT INTO artifacts (type, name, source_url, net_score, ratings, status, metadata)
@@ -1366,44 +1423,22 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 url,
                 net_score,
                 json.dumps(rating),
-                "upload_pending",
+                artifact_status,
                 metadata_json,
             ),
             fetch=True,
         )
 
         artifact_id = result[0]["id"]
-
-        # Generate proper S3 HTTPS URL immediately
-        # download_url = f"https://{S3_BUCKET}.s3.us-east-1.amazonaws.com/{artifact_type}/{artifact_id}/"
-
-        download_url = s3_client.generate_presigned_url(
-            "get_object",
-            Params={
-                "Bucket": S3_BUCKET,
-                "Key": f"{artifact_type}/{artifact_id}/",
-            },
-            ExpiresIn=3600 * 24 * 7,  # 7 days
-        )
-
-        print("[DEBUG DOWNLOAD URL] Generated download URL:", download_url)
-
-        # Update the artifact with download_url
-        run_query(
-            """
-            UPDATE artifacts
-            SET download_url = %s
-            WHERE id = %s;
-            """,
-            (download_url, artifact_id),
-            fetch=False,
-        )
+        download_url = None
         
         # Recalculate metrics with artifact_id for TreeScore calculation
         if artifact_type == "model":
             model_dict["artifact_id"] = artifact_id
             calc_with_id = MetricCalculator()
             rating_with_treescore = calc_with_id.calculate_all_metrics(model_dict, category="MODEL")
+            rating = rating_with_treescore
+            net_score = rating_with_treescore.get("net_score")
             
             # Update ratings with TreeScore included
             run_query(
@@ -1607,19 +1642,56 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             )
 
         # --------------------------
-        # 7. Send SQS message to ECS ingest worker
+        # 7. Decide final status, set download_url, and optionally queue ingestion
         # --------------------------
-        sqs_client.send_message(
-            QueueUrl=os.environ.get("INGEST_QUEUE_URL"),
-            MessageBody=json.dumps(
-                {
-                    "artifact_id": artifact_id,
-                    "artifact_type": artifact_type,
-                    "identifier": identifier,
-                    "source_url": url,
-                }
-            ),
+        final_status = artifact_status
+        if artifact_type == "model":
+            try:
+                final_status = (
+                    "upload_pending"
+                    if float(net_score) > NET_SCORE_THRESHOLD
+                    else "rejected"
+                )
+            except Exception:
+                final_status = "rejected"
+        else:
+            final_status = "upload_pending"
+
+        if final_status != "rejected":
+            download_url = s3_client.generate_presigned_url(
+                "get_object",
+                Params={
+                    "Bucket": S3_BUCKET,
+                    "Key": f"{artifact_type}/{artifact_id}/",
+                },
+                ExpiresIn=3600 * 24 * 7,  # 7 days
+            )
+            print("[DEBUG DOWNLOAD URL] Generated download URL:", download_url)
+        else:
+            download_url = None
+
+        run_query(
+            """
+            UPDATE artifacts
+            SET status = %s, download_url = %s
+            WHERE id = %s;
+            """,
+            (final_status, download_url, artifact_id),
+            fetch=False,
         )
+
+        if final_status != "rejected":
+            sqs_client.send_message(
+                QueueUrl=os.environ.get("INGEST_QUEUE_URL"),
+                MessageBody=json.dumps(
+                    {
+                        "artifact_id": artifact_id,
+                        "artifact_type": artifact_type,
+                        "identifier": identifier,
+                        "source_url": url,
+                    }
+                ),
+            )
 
         # --------------------------
         # 8. SUCCESS (201)

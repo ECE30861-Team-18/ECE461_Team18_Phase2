@@ -575,10 +575,10 @@ class AvailableScoreMetric(Metric):
         
         try:
             model_id = model_info.get("id") if isinstance(model_info, dict) else None
-            has_linked_dataset = False
-            has_linked_code = False
+            has_linked_dataset: Optional[bool] = None
+            has_linked_code: Optional[bool] = None
 
-            # Prefer explicit dependency links; missing ID counts as no links
+            # Prefer explicit dependency links; if lookup fails, fall back to heuristics
             if model_id:
                 try:
                     from rds_connection import run_query
@@ -592,6 +592,8 @@ class AvailableScoreMetric(Metric):
                         (model_id,),
                         fetch=True,
                     ) or []
+                    has_linked_dataset = False
+                    has_linked_code = False
                     for row in rows:
                         dtype = (row.get("dependency_type") or "").lower()
                         cnt = row.get("cnt") or row.get("count") or 0
@@ -600,9 +602,11 @@ class AvailableScoreMetric(Metric):
                         elif dtype == "code" and cnt:
                             has_linked_code = True
                 except Exception:
+                    # leave as None to allow heuristic scoring
                     pass
 
-            if not has_linked_dataset and not has_linked_code:
+            # Only short-circuit to 0 when we definitively saw no links
+            if has_linked_dataset is False and has_linked_code is False:
                 self._latency = int((time.time() - start_time) * 1000)
                 return 0.0
 

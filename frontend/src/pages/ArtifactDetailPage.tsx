@@ -37,7 +37,6 @@ import {
   ModelRating,
   ArtifactLineageGraph,
   ArtifactCost,
-  ArtifactAuditEntry,
 } from '../types';
 import apiClient from '../api';
 
@@ -70,7 +69,7 @@ export default function ArtifactDetailPage() {
   const [rating, setRating] = useState<ModelRating | null>(null);
   const [lineage, setLineage] = useState<ArtifactLineageGraph | null>(null);
   const [cost, setCost] = useState<ArtifactCost | null>(null);
-  const [audit, setAudit] = useState<ArtifactAuditEntry[]>([]);
+  //const [audit, setAudit] = useState<ArtifactAuditEntry[]>([]);
   
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -123,13 +122,13 @@ export default function ArtifactDetailPage() {
         console.warn('Cost not available:', err);
       }
 
-      // Load audit trail
-      try {
-        const auditData = await apiClient.getArtifactAudit(type, id);
-        setAudit(auditData);
-      } catch (err) {
-        console.warn('Audit trail not available:', err);
-      }
+      // // Load audit trail
+      // try {
+      //   const auditData = await apiClient.getArtifactAudit(type, id);
+      //   setAudit(auditData);
+      // } catch (err) {
+      //   console.warn('Audit trail not available:', err);
+      // }
     } catch (err: any) {
       setError(err.message || 'Failed to load artifact');
     } finally {
@@ -359,7 +358,7 @@ export default function ArtifactDetailPage() {
           )}
         </TabPanel>
 
-        <TabPanel value={tabValue} index={type === 'model' ? 3 : 1}>
+        {/* <TabPanel value={tabValue} index={type === 'model' ? 3 : 1}>
           {audit.length > 0 ? (
             <Box>
               <Typography variant="h6" gutterBottom>
@@ -384,7 +383,7 @@ export default function ArtifactDetailPage() {
           ) : (
             <Alert severity="info">No audit history available</Alert>
           )}
-        </TabPanel>
+        </TabPanel> */}
 
         {type === 'model' && (
           <TabPanel value={tabValue} index={4}>

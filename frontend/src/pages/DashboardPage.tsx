@@ -21,7 +21,7 @@ import {
   TrendingUp as TrendingUpIcon,
   CloudDone as CloudIcon,
 } from '@mui/icons-material';
-import { ArtifactMetadata, TracksResponse } from '../types';
+import { ArtifactMetadata } from '../types';
 import apiClient from '../api';
 import { useAuth } from '../AuthContext';
 
@@ -30,7 +30,7 @@ export default function DashboardPage() {
   const { user } = useAuth();
 
   const [recentArtifacts, setRecentArtifacts] = useState<ArtifactMetadata[]>([]);
-  const [tracks, setTracks] = useState<TracksResponse | null>(null);
+  // const [tracks, setTracks] = useState<TracksResponse | null>(null);
   const [stats, setStats] = useState({
     total: 0,
     models: 0,
@@ -60,17 +60,16 @@ export default function DashboardPage() {
         datasets: artifacts.filter((a) => a.type === 'dataset').length,
         code: artifacts.filter((a) => a.type === 'code').length,
       });
-
       // Show recent 5 artifacts
       setRecentArtifacts(artifacts.slice(0, 5));
 
       // Load tracks information
-      try {
-        const tracksData = await apiClient.getTracks();
-        setTracks(tracksData);
-      } catch (err) {
-        console.warn('Tracks not available:', err);
-      }
+      // try {
+      //   const tracksData = await apiClient.getTracks();
+      //   setTracks(tracksData);
+      // } catch (err) {
+      //   console.warn('Tracks not available:', err);
+      // }
     } catch (err: any) {
       setError(err.message || 'Failed to load dashboard data');
     } finally {
@@ -238,7 +237,7 @@ export default function DashboardPage() {
             </Box>
           </Paper>
 
-          {tracks && tracks.plannedTracks.length > 0 && (
+          {/* {tracks && tracks.plannedTracks.length > 0 && (
             <Paper sx={{ p: 3 }}>
               <Typography variant="h6" gutterBottom>
                 Implementation Tracks
@@ -249,7 +248,7 @@ export default function DashboardPage() {
                 ))}
               </Box>
             </Paper>
-          )}
+          )} */}
         </Grid>
       </Grid>
     </Box>

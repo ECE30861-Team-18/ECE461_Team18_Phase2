@@ -1655,9 +1655,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             except Exception:
                 final_status = "rejected"
         else:
-            final_status = "upload_pending"
+            # Datasets and code are not mirrored to S3; mark them available with source URL.
+            final_status = "available"
 
-        if final_status != "rejected":
+        if final_status != "rejected" and artifact_type == "model":
             download_url = s3_client.generate_presigned_url(
                 "get_object",
                 Params={
@@ -1667,6 +1668,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 ExpiresIn=3600 * 24 * 7,  # 7 days
             )
             print("[DEBUG DOWNLOAD URL] Generated download URL:", download_url)
+        elif final_status == "available" and artifact_type in ("dataset", "code"):
+            download_url = url
         else:
             download_url = None
 
@@ -1680,7 +1683,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             fetch=False,
         )
 
-        if final_status != "rejected":
+        if final_status != "rejected" and artifact_type == "model":
             sqs_client.send_message(
                 QueueUrl=os.environ.get("INGEST_QUEUE_URL"),
                 MessageBody=json.dumps(

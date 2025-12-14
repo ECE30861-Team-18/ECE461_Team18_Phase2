@@ -65,12 +65,12 @@ export default function DashboardPage() {
       setRecentArtifacts(artifacts.slice(0, 5));
 
       // Load tracks information
-      try {
-        const tracksData = await apiClient.getTracks();
-        setTracks(tracksData);
-      } catch (err) {
-        console.warn('Tracks not available:', err);
-      }
+      // try {
+      //   const tracksData = await apiClient.getTracks();
+      //   setTracks(tracksData);
+      // } catch (err) {
+      //   console.warn('Tracks not available:', err);
+      // }
     } catch (err: any) {
       setError(err.message || 'Failed to load dashboard data');
     } finally {

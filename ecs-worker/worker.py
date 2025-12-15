@@ -102,10 +102,10 @@ def stream_zip_from_s3_to_s3(bucket: str, prefix: str, zip_key: str):
             if chunk:
                 yield chunk
 
-    # Add each S3 object to the streaming zip
+    # Add each S3 object to the streaming zip using a generator source
     for key in list_artifact_objects(bucket, prefix):
         arcname = key[len(prefix):] if key.startswith(prefix) else key
-        z.add(arcname, make_generator(key))
+        z.add(make_generator(key), arcname)
 
     # Multipart upload for the zip output
     upload = s3.create_multipart_upload(

@@ -103,7 +103,22 @@ while True:
 
     msg = resp["Messages"][0]
     receipt = msg["ReceiptHandle"]
-    body = json.loads(msg["Body"])
+
+    raw_body = msg.get("Body", "")
+    try:
+        body = json.loads(raw_body)
+        # Some producers may double-encode or send plain IDs; normalize to dicts only.
+        if isinstance(body, str):
+            body = json.loads(body)
+    except Exception:
+        print(f"Error decoding message body; skipping. body={raw_body}")
+        sqs.delete_message(QueueUrl=QUEUE_URL, ReceiptHandle=receipt)
+        continue
+
+    if not isinstance(body, dict):
+        print(f"Unexpected message body type {type(body)}; skipping. body={body}")
+        sqs.delete_message(QueueUrl=QUEUE_URL, ReceiptHandle=receipt)
+        continue
 
     artifact_id = body["artifact_id"]
     artifact_type = body["artifact_type"]

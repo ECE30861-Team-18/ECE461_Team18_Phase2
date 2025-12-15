@@ -104,7 +104,7 @@ export default function CreateArtifactPage() {
             sx={{
               mb: 3,
               p: 2,
-              bgcolor: 'grey.100',
+              bgcolor: 'grey.900',
               borderRadius: 1,
               border: '1px solid',
               borderColor: 'grey.300',
@@ -160,7 +160,7 @@ export default function CreateArtifactPage() {
           </Box>
         </form>
 
-        <Box sx={{ mt: 4, p: 2, bgcolor: 'info.light', borderRadius: 1 }}>
+        <Box sx={{ mt: 4, p: 2, bgcolor: 'primary.dark', borderRadius: 1 }}>
           <Typography variant="subtitle2" gutterBottom>
             📝 Note:
           </Typography>

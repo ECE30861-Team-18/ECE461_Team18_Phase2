@@ -15,14 +15,29 @@ import ArtifactDetailPage from './pages/ArtifactDetailPage';
 import CreateArtifactPage from './pages/CreateArtifactPage';
 import HealthPage from './pages/HealthPage';
 
+// const theme = createTheme({
+//   palette: {
+//     mode: 'light',
+//     primary: {
+//       main: '#1976d2',
+//     },
+//     secondary: {
+//       main: '#dc004e',
+//     },
+//   },
+//   typography: {
+//     fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
+//   },
+// });
+
 const theme = createTheme({
   palette: {
-    mode: 'light',
+    mode: 'dark',
     primary: {
-      main: '#1976d2',
+      main: '#ffbb00ff',
     },
     secondary: {
-      main: '#dc004e',
+      main: '#ff9900ff',
     },
   },
   typography: {

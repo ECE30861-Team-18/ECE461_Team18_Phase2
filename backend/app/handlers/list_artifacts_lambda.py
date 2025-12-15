@@ -90,8 +90,16 @@ def lambda_handler(event, context):
 
         for artifact in artifacts:
             _deserialize_json_fields(artifact)
+            
+            
+            # ZIP Extract download_url generation
             artifact_id = artifact.get("id")
             artifact_type = artifact.get("type")
+            
+                    
+            
+            # Generate download URL if missing
+            
             print("trying to generate download url for artifact:", artifact_id, artifact_type)
             # Generate proper S3 HTTPS URL immediately
             # download_url = f"https://{S3_BUCKET}.s3.us-east-1.amazonaws.com/{artifact_type}/{artifact_id}/"
@@ -100,9 +108,9 @@ def lambda_handler(event, context):
                 "get_object",
                 Params={
                     "Bucket": S3_BUCKET,
-                    "Key": f"{artifact_type}/{artifact_id}/",
+                    "Key": f"{artifact_type}/{artifact_id}/artifact.zip",
                 },
-                ExpiresIn=3600 * 24 * 7,  # 7 days
+                ExpiresIn=3600,  # 1 hour expiration
             )
 
             print("[DEBUG DOWNLOAD URL] Generated download URL:", download_url)

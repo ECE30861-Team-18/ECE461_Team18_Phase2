@@ -17,14 +17,12 @@ import {
   Switch,
   TextField,
 } from "@mui/material";
-import {
-  ExpandMore as ExpandMoreIcon,
-  CheckCircle as CheckIcon,
-  Warning as WarningIcon,
-  Error as ErrorIcon,
-  Help as HelpIcon,
-  Refresh as RefreshIcon,
-} from "@mui/icons-material";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import CheckIcon from "@mui/icons-material/CheckCircle";
+import WarningIcon from "@mui/icons-material/Warning";
+import ErrorIcon from "@mui/icons-material/Error";
+import HelpIcon from "@mui/icons-material/Help";
+import RefreshIcon from "@mui/icons-material/Refresh";
 import { HealthComponentCollection, HealthStatus } from "../types";
 import apiClient from "../api";
 

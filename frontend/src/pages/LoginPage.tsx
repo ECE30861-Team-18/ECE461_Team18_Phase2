@@ -12,7 +12,7 @@ import {
   Checkbox,
   Container,
 } from '@mui/material';
-import { LockOutlined as LockIcon } from '@mui/icons-material';
+import LockIcon from '@mui/icons-material/LockOutlined';
 import { useAuth } from '../AuthContext';
 
 export default function LoginPage() {

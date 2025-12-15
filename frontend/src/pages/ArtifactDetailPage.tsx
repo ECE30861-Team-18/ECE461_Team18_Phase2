@@ -21,15 +21,13 @@ import {
   DialogActions,
   TextField,
 } from '@mui/material';
-import {
-  ArrowBack as BackIcon,
-  Delete as DeleteIcon,
-  Download as DownloadIcon,
-  Assessment as RatingIcon,
-  AccountTree as LineageIcon,
-  AttachMoney as CostIcon,
-  Gavel as LicenseIcon,
-} from '@mui/icons-material';
+import BackIcon from '@mui/icons-material/ArrowBack';
+import DeleteIcon from '@mui/icons-material/Delete';
+import DownloadIcon from '@mui/icons-material/Download';
+import RatingIcon from '@mui/icons-material/Assessment';
+import LineageIcon from '@mui/icons-material/AccountTree';
+import CostIcon from '@mui/icons-material/AttachMoney';
+import LicenseIcon from '@mui/icons-material/Gavel';
 import {
   Artifact,
   ArtifactType,

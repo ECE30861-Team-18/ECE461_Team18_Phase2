@@ -4,7 +4,7 @@ import boto3
 import psycopg2
 import urllib.request
 from urllib.parse import urlparse
-import zipstream
+from zipstream import ZipFile
 
 # -------------------
 # AWS CLIENTS
@@ -94,7 +94,7 @@ def list_artifact_objects(bucket: str, prefix: str):
 
 def stream_zip_from_s3_to_s3(bucket: str, prefix: str, zip_key: str):
     # Create streaming zip
-    z = zipstream.ZipFile(mode="w", compression=zipstream.ZIP_DEFLATED)
+    z = ZipFile(mode="w", compression=ZipFile.ZIP_DEFLATED)
 
     def make_generator(key: str):
         obj = s3.get_object(Bucket=bucket, Key=key)

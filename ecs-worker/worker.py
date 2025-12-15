@@ -186,7 +186,7 @@ while True:
                 UPDATE artifacts
                 SET status = 'available'
                 WHERE id = %s;
-            """, (artifact_id))
+            """, (artifact_id,))
 
         conn.commit()
         cur.close()

@@ -138,7 +138,7 @@ export default function LoginPage() {
               </Button>
             </form>
 
-            <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
+            <Box sx={{ mt: 2, p: 2, bgcolor: 'primary.dark', borderRadius: 1 }}>
               <Typography variant="caption" color="text.secondary">
                 <strong>Default credentials:</strong>
                 <br />

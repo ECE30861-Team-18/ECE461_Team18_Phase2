@@ -4,6 +4,7 @@ import boto3
 import psycopg2
 import urllib.request
 from urllib.parse import urlparse
+import zipstream
 
 # -------------------
 # AWS CLIENTS
@@ -16,6 +17,10 @@ QUEUE_URL = os.environ["QUEUE_URL"]
 S3_BUCKET = os.environ["S3_BUCKET"]
 SECRET_NAME = os.environ["SECRET_NAME"]
 HF_TOKEN = os.environ.get("HF_TOKEN")  # Optional but avoids HF rate limits
+AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
+
+ZIP_PART_SIZE = 8 * 1024 * 1024  # 8MB multipart part size
+STREAM_CHUNK_SIZE = 1024 * 1024  # 1MB read chunks
 
 # -------------------
 # DB CONNECTION SETUP
@@ -80,6 +85,83 @@ def stream_file_to_s3(url, bucket, key):
         s3.upload_fileobj(response, bucket, key)
 
 
+def list_artifact_objects(bucket: str, prefix: str):
+    paginator = s3.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        for item in page.get("Contents", []):
+            yield item["Key"]
+
+
+def stream_zip_from_s3_to_s3(bucket: str, prefix: str, zip_key: str):
+    # Create streaming zip
+    z = zipstream.ZipStream(compress_type=zipstream.ZIP_DEFLATED)
+
+    def make_generator(key: str):
+        obj = s3.get_object(Bucket=bucket, Key=key)
+        for chunk in obj["Body"].iter_chunks(chunk_size=STREAM_CHUNK_SIZE):
+            if chunk:
+                yield chunk
+
+    # Add each S3 object to the streaming zip using a generator source
+    for key in list_artifact_objects(bucket, prefix):
+        arcname = key[len(prefix):] if key.startswith(prefix) else key
+        z.add(make_generator(key), arcname)
+
+    # Multipart upload for the zip output
+    upload = s3.create_multipart_upload(
+        Bucket=bucket,
+        Key=zip_key,
+        ContentType="application/zip",
+        ContentDisposition=f'attachment; filename="{os.path.basename(zip_key)}"',
+    )
+
+    parts = []
+    part_number = 1
+    buffer = b""
+
+    try:
+        for chunk in z:
+            if not chunk:
+                continue
+            buffer += chunk
+            while len(buffer) >= ZIP_PART_SIZE:
+                part_data, buffer = buffer[:ZIP_PART_SIZE], buffer[ZIP_PART_SIZE:]
+                resp = s3.upload_part(
+                    Bucket=bucket,
+                    Key=zip_key,
+                    UploadId=upload["UploadId"],
+                    PartNumber=part_number,
+                    Body=part_data,
+                )
+                parts.append({"ETag": resp["ETag"], "PartNumber": part_number})
+                part_number += 1
+
+        # Final part
+        if buffer:
+            resp = s3.upload_part(
+                Bucket=bucket,
+                Key=zip_key,
+                UploadId=upload["UploadId"],
+                PartNumber=part_number,
+                Body=buffer,
+            )
+            parts.append({"ETag": resp["ETag"], "PartNumber": part_number})
+
+        s3.complete_multipart_upload(
+            Bucket=bucket,
+            Key=zip_key,
+            UploadId=upload["UploadId"],
+            MultipartUpload={"Parts": parts},
+        )
+    except Exception:
+        s3.abort_multipart_upload(
+            Bucket=bucket,
+            Key=zip_key,
+            UploadId=upload["UploadId"],
+        )
+        raise
+
+
 # -------------------
 # WORKER MAIN LOOP
 # -------------------
@@ -117,17 +199,25 @@ while True:
 
         print("Download completed.")
 
+        # Build ZIP directly from S3 objects back to S3 (no local disk)
+        zip_s3_key = f"{artifact_type}/{artifact_id}/artifact.zip"
+        print(f"Creating ZIP → s3://{S3_BUCKET}/{zip_s3_key}")
+        stream_zip_from_s3_to_s3(
+            bucket=S3_BUCKET,
+            prefix=f"{artifact_type}/{artifact_id}/",
+            zip_key=zip_s3_key,
+        )
+
         # ----------------------------------
         # UPDATE DATABASE → make artifact available
         # ----------------------------------
         conn = get_db_connection()
         cur = conn.cursor()
 
-        # Generate proper S3 HTTPS URL (region-specific)
-        # Format: https://<bucket>.s3.<region>.amazonaws.com/<key>
-        s3_https_url = f"https://{S3_BUCKET}.s3.us-east-1.amazonaws.com/{artifact_type}/{artifact_id}/"
+        # Generate proper S3 HTTPS URL (region-specific) for the ZIP
+        s3_https_url = f"https://{S3_BUCKET}.s3.{AWS_REGION}.amazonaws.com/{zip_s3_key}"
 
-        cur. execute("""
+        cur.execute("""
             UPDATE artifacts
             SET status = 'available',
                 download_url = %s

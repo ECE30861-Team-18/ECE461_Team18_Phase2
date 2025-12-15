@@ -15,14 +15,12 @@ import {
   Divider,
   Button,
 } from '@mui/material';
-import {
-  Menu as MenuIcon,
-  Dashboard as DashboardIcon,
-  Inventory as InventoryIcon,
-  Add as AddIcon,
-  HealthAndSafety as HealthIcon,
-  Logout as LogoutIcon,
-} from '@mui/icons-material';
+import MenuIcon from '@mui/icons-material/Menu';
+import DashboardIcon from '@mui/icons-material/Dashboard';
+import InventoryIcon from '@mui/icons-material/Inventory';
+import AddIcon from '@mui/icons-material/Add';
+import HealthIcon from '@mui/icons-material/HealthAndSafety';
+import LogoutIcon from '@mui/icons-material/Logout';
 import { useAuth } from '../AuthContext';
 
 const drawerWidth = 240;

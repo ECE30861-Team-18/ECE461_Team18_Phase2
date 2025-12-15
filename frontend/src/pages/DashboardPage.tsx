@@ -15,12 +15,10 @@ import {
   ListItemText,
   ListItemButton,
 } from '@mui/material';
-import {
-  Inventory as InventoryIcon,
-  Add as AddIcon,
-  TrendingUp as TrendingUpIcon,
-  CloudDone as CloudIcon,
-} from '@mui/icons-material';
+import InventoryIcon from '@mui/icons-material/Inventory';
+import AddIcon from '@mui/icons-material/Add';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import CloudIcon from '@mui/icons-material/CloudDone';
 import { ArtifactMetadata } from '../types';
 import apiClient from '../api';
 import { useAuth } from '../AuthContext';

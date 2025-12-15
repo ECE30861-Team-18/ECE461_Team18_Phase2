@@ -14,10 +14,8 @@ import {
   CircularProgress,
   Link,
 } from '@mui/material';
-import {
-  ArrowBack as BackIcon,
-  CloudUpload as UploadIcon,
-} from '@mui/icons-material';
+import BackIcon from '@mui/icons-material/ArrowBack';
+import UploadIcon from '@mui/icons-material/CloudUpload';
 import { ArtifactType } from '../types';
 import apiClient from '../api';
 

@@ -21,12 +21,10 @@ import {
   ToggleButton,
   Stack,
 } from '@mui/material';
-import {
-  Search as SearchIcon,
-  FilterList as FilterIcon,
-  Visibility as ViewIcon,
-  Refresh as RefreshIcon,
-} from '@mui/icons-material';
+import SearchIcon from '@mui/icons-material/Search';
+import FilterIcon from '@mui/icons-material/FilterList';
+import ViewIcon from '@mui/icons-material/Visibility';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import { ArtifactMetadata, ArtifactType } from '../types';
 import apiClient from '../api';
 
